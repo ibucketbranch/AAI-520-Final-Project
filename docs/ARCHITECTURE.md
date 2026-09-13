@@ -1,0 +1,49 @@
+# Architecture
+
+**Overview:** the v1 flow as agreed on the 2026-09-13 planning call (docs/adr/0002). A planner gathers evidence for a stock symbol, Bull and Bear argue from the pool, an evaluator checks claim support, and a memory note carries forward to the next run.
+
+## v1 flow
+
+```mermaid
+flowchart TD
+    S[Stock symbol] --> P[Planner]
+    P --> E[Earnings gatherer]
+    P --> N[News gatherer]
+    P --> M[Market gatherer]
+    E --> POOL[(Evidence pool)]
+    N --> POOL
+    M --> POOL
+    POOL --> BULL[Bull analyst]
+    POOL --> BEAR[Bear analyst]
+    BULL --> EV[Evaluator]
+    BEAR --> EV
+    EV --> D[Decision with evidence]
+    EV --> MEM[Memory note for next run]
+    MEM -.-> P
+```
+
+Every Bull and Bear claim carries a pointer to the evidence item it came from; the evaluator counts supported vs unsupported claims and sends unsupported ones back with the reason attached.
+
+## Components and owners
+
+| Component | Lives in | Responsibility | Owner |
+|-----------|----------|----------------|-------|
+| Planner | `src/investment_committee/agents/planner.py` | Plans research steps for a symbol, reads last run's memory note | TBD |
+| Earnings tool | `src/investment_committee/tools/earnings.py` | Last quarter results | TBD |
+| News tool | `src/investment_committee/tools/news.py` | Headlines and events that could move the price | TBD |
+| Market tool | `src/investment_committee/tools/market.py` | Price history and indicators (RSI, MACD) | TBD |
+| Bull analyst | `src/investment_committee/agents/bull.py` | Optimistic case, every claim with an evidence pointer | TBD |
+| Bear analyst | `src/investment_committee/agents/bear.py` | Pessimistic case, every claim with an evidence pointer | TBD |
+| Evaluator | `src/investment_committee/agents/evaluator.py` | Checks supported vs unsupported claims, feeds refinement | TBD |
+| Chaining workflow | `src/investment_committee/workflows/chaining.py` | Ingest news -> preprocess -> classify -> extract -> summarize | TBD |
+| Routing workflow | `src/investment_committee/workflows/routing.py` | Sends content to the right specialist | TBD |
+| Evaluator-optimizer workflow | `src/investment_committee/workflows/evaluator_optimizer.py` | Generate -> evaluate -> refine loop | TBD |
+| Memory store | `src/investment_committee/memory/store.py` | Cross-run notes (backend pending ADR-0003) | TBD |
+| Metrics | `src/investment_committee/evaluation/metrics.py` | Supported vs unsupported claim counts per run | TBD |
+| Final notebook | `notebooks/final/` | The submitted deliverable, assembled from the package | TBD |
+
+## Stretch (documented, may not ship)
+
+- NLI claim checking: run each claim against its cited evidence with an NLI model (entailed / contradicted / unsupported).
+- RAG over EDGAR filings for the earnings analyst.
+- Cross-model evaluation: a judge from a different model family than the generators, since LLM judges favor their own outputs (Panickssery et al., 2024).
