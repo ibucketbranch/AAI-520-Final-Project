@@ -1,0 +1,33 @@
+name: Task
+description: A unit of project work
+title: "[task] "
+labels: ["type:task"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What this task delivers, in one or two sentences.
+    validations:
+      required: true
+  - type: input
+    id: rubric
+    attributes:
+      label: Rubric item
+      description: Agent Function, Workflow Pattern, or Code item this serves (see docs/RUBRIC_MAP.md).
+    validations:
+      required: true
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of done
+      description: How the reviewer knows it is finished.
+    validations:
+      required: true
+  - type: input
+    id: owner
+    attributes:
+      label: Owner
+      description: Who is doing it.
+    validations:
+      required: true
