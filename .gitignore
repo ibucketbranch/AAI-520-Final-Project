@@ -1,0 +1,52 @@
+# Environments
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.ipynb_checkpoints/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Coverage
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# macOS
+.DS_Store
+
+# Claude local settings
+.claude/settings.local.json
+
+# Data stays local, never committed
+data/*
+!data/.gitkeep
+data/raw/
+data/processed/
+*.csv
+*.parquet
+*.zip
+
+# Large model artifacts
+*.bin
+*.safetensors
+*.ckpt
+
+# Notebook exports are rebuilt from the notebook; the final HTML export is the
+# one deliverable allowed in
+*.html
+!notebooks/final/*.html
+
+# Editors
+.vscode/
+.idea/

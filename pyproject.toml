@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "aai520-final-project"
+version = "0.1.0"
+description = "AAI-520 Final Team Project: multi-agent investment research system (AI Investment Committee)"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [
+    { name = "Michael Valderrama" },
+    { name = "Guna Pasupathy" },
+]
+# Base stack the team already knows from the course. Nothing LLM-specific yet;
+# the model choice is an open question in docs/adr/0002.
+dependencies = [
+    "yfinance==1.7.0",
+    "pandas==3.0.5",
+    "numpy==2.4.6",
+    "requests==2.34.2",
+    "python-dotenv==1.2.3",
+    "pydantic==2.13.5",
+    "tenacity==9.1.4",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff==0.16.7",
+    "pre-commit==4.6.2",
+    "pytest==9.1.1",
+    "pytest-cov==7.1.0",
+    "mypy==2.3.1",
+    "nbstripout==0.9.1",
+    "nbformat==5.11.1",
+    "jupyter==1.1.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "data"]
+
+[tool.ruff.lint]
+# Pyflakes, pycodestyle, import order, bug-prone patterns, upgrades, and
+# docstrings. Long lines are handled by the formatter, not flagged twice.
+select = ["E", "F", "W", "I", "B", "UP", "D"]
+ignore = ["E501"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D"]
+"*.ipynb" = ["E402", "B018", "F401", "D"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+[tool.mypy]
+python_version = "3.11"
+ignore_missing_imports = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+module = "investment_committee.*"
+disallow_untyped_defs = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --cov=investment_committee --cov-report=term-missing"
