@@ -1,4 +1,3 @@
-# Every path currently requires review through the one-approval branch rule.
-# TODO: add Guna's GitHub username here and split per-directory owners once
-# the owner map is agreed (issue #4, docs/ARCHITECTURE.md).
-* @ibucketbranch
+# One line for now; per-directory owners get added once the owner map is
+# agreed (issue #4, docs/ARCHITECTURE.md).
+* @ibucketbranch @gunaphysics
