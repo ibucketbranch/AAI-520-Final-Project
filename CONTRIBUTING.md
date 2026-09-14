@@ -56,3 +56,5 @@
 
 - Standing call Tuesdays 4:30 PM PT. Slack channel `#group7-mina_-guna-_michael`, plus text for anything urgent.
 - Milestones: Team Project Status Update Form Mon Sep 28; final notebook Mon Oct 19, 11:59 PM PT, no extensions, three Canvas submission attempts.
+
+<!-- guardrail verification probe; this PR is closed unmerged -->
