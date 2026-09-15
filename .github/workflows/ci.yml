@@ -71,6 +71,11 @@ jobs:
   secrets:
     name: secrets
     runs-on: ubuntu-latest
+    # The default workflow token is read-only and excludes pull-requests, but
+    # gitleaks-action lists the PR's commits, so grant that scope explicitly.
+    permissions:
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
