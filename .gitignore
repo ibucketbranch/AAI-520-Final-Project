@@ -50,3 +50,10 @@ data/processed/
 # Editors
 .vscode/
 .idea/
+
+# SQLite database files: built locally on first run, never committed (ADR-0003)
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite3

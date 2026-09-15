@@ -1,6 +1,6 @@
 # ADR-0003: Where shared state lives
 
-Status: Proposed
+Status: Accepted 2026-09-14
 
 ## Context
 
@@ -14,8 +14,20 @@ Two people need to share the evidence pool, run transcripts, and cross-run memor
 
 ## Decision
 
-Pending the Tuesday 2026-09-15 call.
+SQLite. One local file the notebook builds on its first run from the committed
+sample data under `data/sample/`. Guna owns the schema and `storage.py`, the
+single module that creates and touches the database; every other component
+goes through that module. Database files (`*.db`, `*.sqlite`, `*.sqlite3`,
+plus SQLite's `-shm` and `-wal` sidecars) are never committed.
+
+The hosted options lost on reproducibility: Supabase and Neon both require an
+account, credentials, and network access from anyone re-running the notebook,
+including the grader. SQLite ships with Python and starts from the committed
+fixtures with no setup.
 
 ## Consequences
 
-Pending. `DATABASE_URL` in .env.example and `memory/store.py` are written so the backend is a connection-string change.
+`storage.py` and the shared record shapes in `models.py` are the contracts-first
+deliverable, due Sep 22. `DATABASE_URL` stays in .env.example so a hosted
+backend remains a connection-string change if collaboration ever demands it.
+The gitignore carries the database file patterns.
