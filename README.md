@@ -57,14 +57,12 @@ data/                       local datasets, gitignored
 scripts/                    repo checks run by hooks and CI
 ```
 
-## Team and roles
+## Team, roles, and milestones
 
-| Name | Role |
-|------|------|
-| Michael Valderrama | TBD |
-| Guna Pasupathy | TBD |
+[docs/TEAM.md](docs/TEAM.md): members, time zones, the standing call, and the
+lead. Per-area owners live in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) and
+.github/CODEOWNERS. The dated plan is [docs/MILESTONES.md](docs/MILESTONES.md).
 
-Per-area owners are agreed in issue #4 and recorded in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Working agreements
 
