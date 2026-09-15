@@ -1,0 +1,1 @@
+Synthetic sample articles written for this repo's tests and fixtures. No text is scraped or copied from any news provider; companies are real tickers but every event, quote, and number is invented. a-001/a-002 are a deliberate duplicate pair and n-002 has a deliberately empty body for the preprocess tests.
