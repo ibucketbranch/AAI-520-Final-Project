@@ -1,0 +1,66 @@
+[
+  {
+    "article_id": "a-001",
+    "symbol": "AAPL",
+    "source": "synthetic-wire",
+    "published": "2026-09-08",
+    "title": "Apple beats quarterly earnings expectations",
+    "body": "Apple reported quarterly revenue of $91.2 billion, ahead of analyst expectations.<br /><br />Chief executive Tim Cook said the company\u2019s services business carried the quarter. Guidance for the December quarter was raised."
+  },
+  {
+    "article_id": "a-002",
+    "symbol": "AAPL",
+    "source": "synthetic-wire-mirror",
+    "published": "2026-09-08",
+    "title": "Apple  beats quarterly earnings expectations",
+    "body": "Apple reported quarterly revenue of $91.2 billion, ahead of analyst expectations. <br />  <br /> Chief executive Tim Cook said the company\u2019s services business carried the quarter.   Guidance for the December quarter was raised."
+  },
+  {
+    "article_id": "a-003",
+    "symbol": "AAPL",
+    "source": "synthetic-blog",
+    "published": "2026-09-09",
+    "title": "Apple unveils new on-device translation feature",
+    "body": "At a press event in Cupertino, Apple announced a product update that adds on-device translation. The launch is planned for October, and the feature runs without a network connection."
+  },
+  {
+    "article_id": "t-001",
+    "symbol": "TSLA",
+    "source": "synthetic-wire",
+    "published": "2026-09-09",
+    "title": "Regulator opens investigation into Tesla driver-assist claims",
+    "body": "A federal regulator opened an investigation into Tesla\u2019s marketing of its driver-assist software. The company said it would cooperate. A separate lawsuit over the same claims was settled last year."
+  },
+  {
+    "article_id": "t-002",
+    "symbol": "TSLA",
+    "source": "synthetic-desk",
+    "published": "2026-09-10",
+    "title": "Analyst cuts Tesla price target on margin pressure",
+    "body": "Shares of Tesla fell after an analyst downgrade. The note cited margin pressure from price cuts and set a price target of $198 \u2013 down from $240."
+  },
+  {
+    "article_id": "t-003",
+    "symbol": "TSLA",
+    "source": "synthetic-wire",
+    "published": "2026-09-11",
+    "title": "Tesla energy division reports record quarter",
+    "body": "Tesla\u2019s energy storage division reported record quarterly revenue of $3.1 billion. Elon Musk called the result \u201cthe start of the ramp\u201d in a post, and the profit contribution reached an all-time high."
+  },
+  {
+    "article_id": "n-001",
+    "symbol": "NFLX",
+    "source": "synthetic-culture-desk",
+    "published": "2026-09-10",
+    "title": "Netflix caf\u00e9 documentary draws festival praise",
+    "body": "A Netflix documentary about a Parisian caf\u00e9 drew praise at a film festival\u2026 Attendance figures were not disclosed, and the platform said nothing about renewal plans."
+  },
+  {
+    "article_id": "n-002",
+    "symbol": "NFLX",
+    "source": "synthetic-wire",
+    "published": "2026-09-11",
+    "title": "Netflix placeholder item with empty body",
+    "body": "<br /> \u00a0  "
+  }
+]
