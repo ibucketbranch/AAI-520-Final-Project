@@ -15,7 +15,8 @@ Two people need to share the evidence pool, run transcripts, and cross-run memor
 ## Decision
 
 SQLite. One local file the notebook builds on its first run from the committed
-sample data under `data/sample/`. Guna owns the schema and `storage.py`, the
+sample fixtures under `tests/fixtures/` (where the news and evidence samples
+both live). Guna owns the schema and `storage.py`, the
 single module that creates and touches the database; every other component
 goes through that module. Database files (`*.db`, `*.sqlite`, `*.sqlite3`,
 plus SQLite's `-shm` and `-wal` sidecars) are never committed.
