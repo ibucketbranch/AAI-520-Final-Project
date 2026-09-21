@@ -17,7 +17,7 @@ authors = [
 # the model choice is an open question in docs/adr/0002.
 dependencies = [
     "yfinance==1.7.0",
-    "pandas==3.0.5",
+    "pandas==3.0.6",
     "numpy==2.4.6",
     "requests==2.34.2",
     "python-dotenv==1.2.3",
@@ -28,7 +28,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "ruff==0.16.7",
+    "ruff==0.16.8",
     "pre-commit==4.6.2",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
