@@ -1,0 +1,52 @@
+{
+  "run": {
+    "run_id": "sample-aapl-001",
+    "symbol": "AAPL",
+    "with_review": true,
+    "started_at": "2026-09-12T16:00:00+00:00",
+    "finished_at": null,
+    "memo": null
+  },
+  "evidence": [
+    {
+      "evidence_id": "ev-001",
+      "run_id": "sample-aapl-001",
+      "symbol": "AAPL",
+      "source": "earnings",
+      "title": "Quarterly revenue",
+      "content": "Revenue for the quarter was 91.2 billion dollars, up 4 percent from a year earlier.",
+      "as_of": "2026-07-30",
+      "reference": "yfinance:AAPL:income_stmt"
+    },
+    {
+      "evidence_id": "ev-002",
+      "run_id": "sample-aapl-001",
+      "symbol": "AAPL",
+      "source": "earnings",
+      "title": "Diluted EPS",
+      "content": "Diluted earnings per share were 1.42 dollars against a 1.38 dollar consensus.",
+      "as_of": "2026-07-30",
+      "reference": "yfinance:AAPL:income_stmt"
+    },
+    {
+      "evidence_id": "ev-003",
+      "run_id": "sample-aapl-001",
+      "symbol": "AAPL",
+      "source": "news",
+      "title": "Wearables line refresh announced",
+      "content": "The company announced a refreshed wearables line to ship before the holiday quarter.",
+      "as_of": "2026-09-10",
+      "reference": "https://example.com/news/aapl-wearables-refresh"
+    },
+    {
+      "evidence_id": "ev-004",
+      "run_id": "sample-aapl-001",
+      "symbol": "AAPL",
+      "source": "market",
+      "title": "RSI(14)",
+      "content": "The 14-day RSI closed at 61.3, below the 70 overbought line.",
+      "as_of": "2026-09-11",
+      "reference": "yfinance:AAPL:history:1y"
+    }
+  ]
+}
