@@ -1,3 +1,17 @@
-# One line for now; per-directory owners get added once the owner map is
-# agreed (issue #4, docs/ARCHITECTURE.md).
-* @ibucketbranch @gunaphysics
+# Per-area owners (issue #4). CODEOWNERS resolves by LAST matching line, so
+# the catch-all comes first and specific paths below override it.
+* @ibucketbranch @gunaphysics @habibmn09
+
+src/investment_committee/agents/                            @ibucketbranch
+src/investment_committee/tools/                             @gunaphysics
+src/investment_committee/memory/                            @gunaphysics
+src/investment_committee/evaluation/                        @habibmn09 @ibucketbranch
+src/investment_committee/workflows/chaining.py              @habibmn09
+src/investment_committee/workflows/routing.py               @gunaphysics
+src/investment_committee/workflows/evaluator_optimizer.py   @ibucketbranch
+src/investment_committee/models.py                          @gunaphysics
+src/investment_committee/storage.py                         @gunaphysics
+src/investment_committee/agents/planner.py                  @gunaphysics
+notebooks/final/                                            @ibucketbranch
+.github/                                                    @ibucketbranch
+docs/                                                       @ibucketbranch @gunaphysics @habibmn09
