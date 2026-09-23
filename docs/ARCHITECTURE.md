@@ -2,6 +2,9 @@
 
 **Overview:** the v1 flow as agreed on the 2026-09-13 planning call (docs/adr/0002). A planner gathers evidence for a stock symbol, Bull and Bear argue from the pool, an evaluator checks claim support, and a memory note carries forward to the next run.
 
+The detailed handoffs and team ownership are shown in
+[WORKFLOW_SEQUENCE.md](WORKFLOW_SEQUENCE.md).
+
 ## v1 flow
 
 ```mermaid
