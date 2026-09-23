@@ -2,6 +2,10 @@
 
 Multi-agent stock research, built for the AAI-520 Final Team Project.
 
+This project is a part of the AAI-520 course in the Applied Artificial Intelligence Program at the University of San Diego (USD).
+
+-- Project Status: Active
+
 [![CI](https://github.com/ibucketbranch/AAI-520-Final-Project/actions/workflows/ci.yml/badge.svg)](https://github.com/ibucketbranch/AAI-520-Final-Project/actions/workflows/ci.yml)
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
 ![License MIT](https://img.shields.io/badge/license-MIT-green)
@@ -14,10 +18,7 @@ Multi-agent stock research, built for the AAI-520 Final Team Project.
 | Team | Group 7: Michael Valderrama, Guna Pasupathy, Mina Habib |
 | Due | Final notebook Oct 19, 2026 |
 
-<!-- Issue #3: reconcile this README against the course README requirements
-     (Instruction-README_GitHub-AAI.pdf, Canvas file 4747770). -->
-
-## Team
+## Team and Contributors
 
 | Name | GitHub |
 |------|--------|
@@ -27,7 +28,7 @@ Multi-agent stock research, built for the AAI-520 Final Team Project.
 
 Standing call Tuesdays 4:30 PM PT. Owners, time zones, and the lead in [docs/TEAM.md](docs/TEAM.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-## What it does
+## Project Intro/Objective
 
 You give it a stock symbol. It comes back with a buy or do-not-buy memo where every claim points at the evidence it came from, plus a note to itself for the next run.
 
@@ -71,6 +72,25 @@ Full design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the decision record
 
 Status per row in [docs/RUBRIC_MAP.md](docs/RUBRIC_MAP.md).
 
+## Project Description
+
+The committee researches one stock symbol per run. Market and earnings numbers come from yfinance (price history, RSI, MACD, last-quarter results); news comes in as saved article JSON, with committed synthetic fixtures under `tests/fixtures/` so tests and the notebook run offline with no key. A local SQLite database is built on first run from committed sample data and holds the evidence pool, run transcripts, and cross-run memory notes; `storage.py` is the only module that touches it. The question the evaluation section answers: does the evaluator loop raise the share of supported claims? We run held-out symbols with and without the loop and count supported vs unsupported claims per run. Known roadblocks: yfinance is an unofficial Yahoo interface and can break without notice (the saved-article path covers the final notebook), and the v1 model choice is still open in [ADR-0002](docs/adr/0002-investment-committee-design.md).
+
+## Methods Used
+
+- NLP preprocessing and entity extraction (the five-step news chain, spaCy NER)
+- Multi-agent LLM workflows: prompt chaining, routing, evaluator-optimizer
+- Technical market indicators (RSI, MACD)
+- Claim-evidence evaluation (supported vs unsupported claim counts)
+- Cross-run memory notes
+
+## Technologies
+
+- Python 3.11, pandas, numpy, pydantic
+- yfinance, spaCy
+- SQLite
+- pytest with a 90 percent coverage floor, ruff, mypy, pre-commit, GitHub Actions
+
 ## Decisions so far
 
 - **SQLite, one owner.** The notebook builds a local database on first run from committed sample data. One person owns the schema and `storage.py`; everything else goes through that module. Database files are never committed. [ADR-0003](docs/adr/0003-storage-choice.md)
@@ -90,7 +110,7 @@ Status per row in [docs/RUBRIC_MAP.md](docs/RUBRIC_MAP.md).
 
 Per-person deliverables in [docs/MILESTONES.md](docs/MILESTONES.md).
 
-## Quick start
+## Installation
 
 ```bash
 git clone git@github.com:ibucketbranch/AAI-520-Final-Project.git
@@ -132,6 +152,10 @@ Du, Y., Li, S., Torralba, A., Tenenbaum, J. B., & Mordatch, I. (2023). *Improvin
 Panickssery, A., Bowman, S. R., & Feng, S. (2024). *LLM evaluators recognize and favor their own generations*. Advances in Neural Information Processing Systems. https://arxiv.org/abs/2404.13076
 
 Xiao, Y., Sun, E., Luo, D., & Wang, W. (2024). *TradingAgents: Multi-agents LLM financial trading framework*. https://arxiv.org/abs/2412.20138
+
+## Acknowledgments
+
+Thanks to our instructors Kahila Mokhtari Jadid, Mirsardar Esmaeili, and Andrew Van Benschoten for guidance throughout the course.
 
 ## License
 
