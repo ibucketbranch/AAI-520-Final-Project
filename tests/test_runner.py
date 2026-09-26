@@ -6,6 +6,7 @@ import pytest
 
 from investment_committee.models import Evidence
 from investment_committee.storage import load_evidence, load_run, open_db
+from investment_committee.tools.earnings import EarningsDataError
 from investment_committee.workflows.chaining import RawArticle
 from investment_committee.workflows.runner import run_research
 
@@ -115,3 +116,36 @@ def test_run_research_returns_gathered_results_when_atomic_save_fails(tmp_path):
     assert snapshot.saved_evidence_count == 0
     assert snapshot.database_path is None
     assert snapshot.storage_error is not None
+
+
+def test_run_research_keeps_other_sources_when_one_has_no_data():
+    def no_earnings(run):
+        raise EarningsDataError(f"No quarterly income statement returned for {run.symbol}.")
+
+    snapshot = run_research(
+        "DRAM",
+        gatherers={
+            "earnings": no_earnings,
+            "news": lambda run: [],
+            "market": lambda run: [_evidence(run, "market")],
+        },
+        database_path=None,
+    )
+
+    assert snapshot.gathered["earnings"] == []
+    assert len(snapshot.gathered["market"]) == 1
+    assert snapshot.gather_errors == {
+        "earnings": "No quarterly income statement returned for DRAM."
+    }
+
+
+def test_run_research_still_raises_unexpected_gatherer_errors():
+    def broken(run):
+        raise RuntimeError("provider down")
+
+    with pytest.raises(RuntimeError, match="provider down"):
+        run_research(
+            "AAPL",
+            gatherers={"earnings": broken, "news": lambda run: [], "market": lambda run: []},
+            database_path=None,
+        )

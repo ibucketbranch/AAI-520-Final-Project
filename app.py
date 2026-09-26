@@ -46,6 +46,9 @@ def show_results(snapshot: ResearchSnapshot) -> None:
             f"records to {snapshot.database_path}."
         )
 
+    for source, message in snapshot.gather_errors.items():
+        st.warning(f"No {source} data: {message}")
+
     plan_rows = [
         {"Step": number, "Source": task.source.title(), "Reason": task.reason}
         for number, task in enumerate(snapshot.plan.tasks, start=1)
