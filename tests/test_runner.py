@@ -88,3 +88,30 @@ def test_run_research_saves_run_and_evidence_but_not_raw_news(tmp_path):
     assert [item.source for item in stored_evidence] == ["earnings", "market"]
     assert snapshot.saved_evidence_count == 2
     assert snapshot.database_path == str(database_path)
+    assert snapshot.storage_error is None
+
+
+def test_run_research_returns_gathered_results_when_atomic_save_fails(tmp_path):
+    def wrong_run_evidence(run):
+        item = _evidence(run, "earnings")
+        return [item.model_copy(update={"run_id": "another-run"})]
+
+    database_path = tmp_path / "committee.db"
+    snapshot = run_research(
+        "AAPL",
+        gatherers={
+            "earnings": wrong_run_evidence,
+            "news": lambda run: [],
+            "market": lambda run: [],
+        },
+        database_path=database_path,
+    )
+
+    with closing(open_db(database_path)) as conn:
+        stored_run = load_run(conn, snapshot.run.run_id)
+
+    assert len(snapshot.gathered["earnings"]) == 1
+    assert stored_run is None
+    assert snapshot.saved_evidence_count == 0
+    assert snapshot.database_path is None
+    assert snapshot.storage_error is not None

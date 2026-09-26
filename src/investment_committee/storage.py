@@ -104,14 +104,32 @@ def open_db(path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
 # ---- writes -----------------------------------------------------------------
 
 
+def _insert_run(conn: sqlite3.Connection, run: Run) -> None:
+    """Insert a run without controlling the surrounding transaction."""
+    conn.execute(
+        "INSERT INTO runs (run_id, symbol, with_review, started_at, finished_at, memo)"
+        " VALUES (?, ?, ?, ?, ?, ?)",
+        (run.run_id, run.symbol, run.with_review, run.started_at, run.finished_at, run.memo),
+    )
+
+
+def _insert_evidence(conn: sqlite3.Connection, items: list[Evidence]) -> None:
+    """Insert evidence without controlling the surrounding transaction."""
+    rows = [
+        (e.evidence_id, e.run_id, e.symbol, e.source, e.title, e.content, e.as_of, e.reference)
+        for e in items
+    ]
+    conn.executemany(
+        "INSERT INTO evidence (evidence_id, run_id, symbol, source, title, content,"
+        " as_of, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+
+
 def save_run(conn: sqlite3.Connection, run: Run) -> None:
     """Insert a new run. Save the run before anything that points at it."""
     with conn:
-        conn.execute(
-            "INSERT INTO runs (run_id, symbol, with_review, started_at, finished_at, memo)"
-            " VALUES (?, ?, ?, ?, ?, ?)",
-            (run.run_id, run.symbol, run.with_review, run.started_at, run.finished_at, run.memo),
-        )
+        _insert_run(conn, run)
 
 
 def finish_run(conn: sqlite3.Connection, run_id: str, memo: str, finished_at: str) -> None:
@@ -125,16 +143,19 @@ def finish_run(conn: sqlite3.Connection, run_id: str, memo: str, finished_at: st
 
 def save_evidence(conn: sqlite3.Connection, items: list[Evidence]) -> None:
     """Insert a batch of evidence items, all at once."""
-    rows = [
-        (e.evidence_id, e.run_id, e.symbol, e.source, e.title, e.content, e.as_of, e.reference)
-        for e in items
-    ]
     with conn:
-        conn.executemany(
-            "INSERT INTO evidence (evidence_id, run_id, symbol, source, title, content,"
-            " as_of, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            rows,
-        )
+        _insert_evidence(conn, items)
+
+
+def save_run_with_evidence(
+    conn: sqlite3.Connection,
+    run: Run,
+    items: list[Evidence],
+) -> None:
+    """Insert one run and its initial evidence as a single transaction."""
+    with conn:
+        _insert_run(conn, run)
+        _insert_evidence(conn, items)
 
 
 def save_claim(conn: sqlite3.Connection, claim: Claim) -> None:
@@ -274,6 +295,5 @@ def seed_from_json(conn: sqlite3.Connection, path: str | Path) -> int:
     if load_run(conn, run.run_id) is not None:
         return 0
     items = [Evidence(**item) for item in data["evidence"]]
-    save_run(conn, run)
-    save_evidence(conn, items)
+    save_run_with_evidence(conn, run, items)
     return len(items)

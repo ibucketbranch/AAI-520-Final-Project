@@ -38,7 +38,9 @@ def article_rows(items: list[RawArticle]) -> list[dict[str, str]]:
 def show_results(snapshot: ResearchSnapshot) -> None:
     """Render a completed research snapshot."""
     st.subheader(f"Research snapshot: {snapshot.run.symbol}")
-    if snapshot.database_path is not None:
+    if snapshot.storage_error is not None:
+        st.warning(f"Research completed, but SQLite could not save it: {snapshot.storage_error}")
+    elif snapshot.database_path is not None:
         st.success(
             f"Saved run {snapshot.run.run_id} and {snapshot.saved_evidence_count} evidence "
             f"records to {snapshot.database_path}."

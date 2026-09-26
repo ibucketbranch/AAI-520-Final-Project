@@ -113,6 +113,7 @@ One call to a language model, kept so the final notebook can replay a run with n
 - Tables are named `runs`, `evidence`, `claims`, `memory_notes`, `model_calls`, with the columns above.
 - The two list fields (`evidence_ids`, `open_gaps`) are stored as JSON text in one column. Booleans are stored as 0 and 1. Timestamps are ISO 8601 text.
 - Foreign keys are on: a row cannot be saved for a run that has not been saved.
+- A new run and its initial evidence are saved in one transaction. If either insert fails, neither is kept.
 - The evaluator records a verdict by saving the same `Claim` again with `supported` and `reason` filled in; the row is replaced.
 - On first run the notebook calls `seed_from_json(conn, path)` with a file shaped `{"run": {...}, "evidence": [...]}`. If that run id is already in the database the call does nothing, so it is safe to call every time.
 
@@ -123,6 +124,7 @@ One call to a language model, kept so the final notebook can replay a run with n
 | `open_db(path)` | open the file, create the tables if missing, return the connection |
 | `save_run`, `finish_run` | start a run; record its memo and end time |
 | `save_evidence` | insert a batch of evidence rows |
+| `save_run_with_evidence` | atomically insert a run and its initial evidence |
 | `save_claim` | insert a claim, or replace it if the id exists |
 | `save_memory_note`, `save_model_call` | insert one row |
 | `load_run`, `load_evidence`, `load_claims`, `load_model_calls` | read back by run id, in saved order |

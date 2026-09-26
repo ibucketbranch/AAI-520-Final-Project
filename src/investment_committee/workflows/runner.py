@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from collections.abc import Mapping
 from contextlib import closing
 from dataclasses import dataclass
@@ -9,7 +10,7 @@ from pathlib import Path
 
 from investment_committee.agents.planner import ResearchPlan, build_plan, normalize_symbol
 from investment_committee.models import Evidence, Run, Source
-from investment_committee.storage import DEFAULT_DB_PATH, open_db, save_evidence, save_run
+from investment_committee.storage import DEFAULT_DB_PATH, open_db, save_run_with_evidence
 from investment_committee.workflows.routing import Gatherer, GathererResult, route_plan
 
 
@@ -22,6 +23,7 @@ class ResearchSnapshot:
     gathered: dict[Source, GathererResult]
     saved_evidence_count: int
     database_path: str | None
+    storage_error: str | None
 
 
 def run_research(
@@ -50,16 +52,24 @@ def run_research(
         if isinstance(item, Evidence)
     ]
 
-    saved_path = str(database_path) if database_path is not None else None
+    saved_path: str | None = None
+    saved_count = 0
+    storage_error: str | None = None
     if database_path is not None:
-        with closing(open_db(database_path)) as conn:
-            save_run(conn, run)
-            save_evidence(conn, evidence)
+        try:
+            with closing(open_db(database_path)) as conn:
+                save_run_with_evidence(conn, run, evidence)
+        except (OSError, sqlite3.Error) as error:
+            storage_error = str(error)
+        else:
+            saved_path = str(database_path)
+            saved_count = len(evidence)
 
     return ResearchSnapshot(
         run=run,
         plan=plan,
         gathered=gathered,
-        saved_evidence_count=len(evidence) if database_path is not None else 0,
+        saved_evidence_count=saved_count,
         database_path=saved_path,
+        storage_error=storage_error,
     )
