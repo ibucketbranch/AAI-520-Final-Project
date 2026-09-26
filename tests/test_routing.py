@@ -66,3 +66,16 @@ def test_router_requires_a_handler_for_every_planned_source():
 def test_router_rejects_a_plan_for_another_symbol():
     with pytest.raises(ValueError, match="different stock symbols"):
         route_plan(Run(symbol="TSLA"), build_plan("AAPL"), gatherers={})
+
+
+def test_router_passes_a_normalized_run_to_gatherers():
+    symbols = []
+
+    def gatherer(run):
+        symbols.append(run.symbol)
+        return []
+
+    gatherers = {"earnings": gatherer, "news": gatherer, "market": gatherer}
+    route_plan(Run(symbol=" aapl "), build_plan("AAPL"), gatherers=gatherers)
+
+    assert symbols == ["AAPL", "AAPL", "AAPL"]

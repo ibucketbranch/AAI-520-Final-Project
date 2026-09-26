@@ -31,14 +31,19 @@ def _row_value(statement: pd.DataFrame, column: Any, names: tuple[str, ...]) -> 
     return None
 
 
+def _dollars(value: float) -> str:
+    """Format a signed dollar amount with the sign before the symbol."""
+    sign = "-" if value < 0 else ""
+    return f"{sign}${abs(value):,.2f}"
+
+
 def _money(value: float) -> str:
     """Format a dollar amount using a readable scale."""
     magnitude = abs(value)
     for scale, label in ((1e12, "trillion"), (1e9, "billion"), (1e6, "million")):
         if magnitude >= scale:
-            sign = "-" if value < 0 else ""
-            return f"{sign}${magnitude / scale:,.2f} {label}"
-    return f"${value:,.2f}"
+            return f"{_dollars(value / scale)} {label}"
+    return _dollars(value)
 
 
 def gather_earnings(run: Run, ticker_factory: TickerFactory | None = None) -> list[Evidence]:
@@ -74,7 +79,7 @@ def gather_earnings(run: Run, ticker_factory: TickerFactory | None = None) -> li
         value = _row_value(statement, latest_column, row_names)
         if value is None:
             continue
-        displayed = _money(value) if value_type == "money" else f"${value:,.2f} per share"
+        displayed = _money(value) if value_type == "money" else f"{_dollars(value)} per share"
         evidence.append(
             Evidence(
                 run_id=run.run_id,

@@ -67,6 +67,23 @@ def test_earnings_gatherer_rejects_unknown_statement_rows():
         gather_earnings(Run(symbol="AAPL"), ticker_factory=lambda symbol: ticker)
 
 
+def test_earnings_gatherer_formats_losses_with_the_sign_before_dollars():
+    statement = pd.DataFrame(
+        {pd.Timestamp("2026-06-30"): [-500_000.0, -1.2e6, -0.5]},
+        index=["Total Revenue", "Net Income", "Diluted EPS"],
+    )
+    ticker = SimpleNamespace(quarterly_income_stmt=statement)
+
+    evidence = gather_earnings(
+        Run(symbol="LOSS"),
+        ticker_factory=lambda symbol: ticker,
+    )
+
+    assert "-$500,000.00" in evidence[0].content
+    assert "-$1.20 million" in evidence[1].content
+    assert "-$0.50 per share" in evidence[2].content
+
+
 def test_news_gatherer_normalizes_current_and_legacy_records():
     timestamp = int(datetime(2026, 9, 21, tzinfo=UTC).timestamp())
     records = [

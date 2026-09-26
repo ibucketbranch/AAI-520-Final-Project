@@ -56,6 +56,7 @@ def route_plan(
     if normalize_symbol(run.symbol) != plan.symbol:
         raise ValueError("The research run and plan use different stock symbols.")
 
+    routed_run = run.model_copy(update={"symbol": plan.symbol})
     handlers = default_gatherers() if gatherers is None else gatherers
     results: dict[Source, GathererResult] = {}
     for task in plan.tasks:
@@ -64,5 +65,5 @@ def route_plan(
         handler = handlers.get(task.source)
         if handler is None:
             raise KeyError(f"No gatherer configured for {task.source}.")
-        results[task.source] = handler(run)
+        results[task.source] = handler(routed_run)
     return results
