@@ -38,6 +38,13 @@ def article_rows(items: list[RawArticle]) -> list[dict[str, str]]:
 def show_results(snapshot: ResearchSnapshot) -> None:
     """Render a completed research snapshot."""
     st.subheader(f"Research snapshot: {snapshot.run.symbol}")
+    if snapshot.storage_error is not None:
+        st.warning(f"Research completed, but SQLite could not save it: {snapshot.storage_error}")
+    elif snapshot.database_path is not None:
+        st.success(
+            f"Saved run {snapshot.run.run_id} and {snapshot.saved_evidence_count} evidence "
+            f"records to {snapshot.database_path}."
+        )
 
     plan_rows = [
         {"Step": number, "Source": task.source.title(), "Reason": task.reason}
@@ -62,7 +69,10 @@ def show_results(snapshot: ResearchSnapshot) -> None:
         market = snapshot.gathered.get("market", [])
         st.dataframe(evidence_rows(market), hide_index=True, width="stretch")
 
-    st.info("Bull/Bear analysis, review, and the final memo are not connected yet.")
+    st.info(
+        "Raw news stays in this snapshot until the news chain converts it to evidence. "
+        "Bull/Bear analysis, review, and the final memo are not connected yet."
+    )
 
 
 st.set_page_config(page_title="AI Investment Committee", page_icon=None, layout="wide")

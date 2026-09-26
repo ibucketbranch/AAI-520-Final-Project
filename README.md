@@ -122,6 +122,9 @@ make run                   # CLI help
 make ui                    # local UI at http://localhost:8501
 ```
 
+Each UI run is saved locally to `data/committee.db`. Earnings and market evidence are
+available immediately; news is saved as evidence after it passes through the news chain.
+
 Requires Python 3.11. Tests run with no network; the tools are mocked.
 
 ## Repository layout
