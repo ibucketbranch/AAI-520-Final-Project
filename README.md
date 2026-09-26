@@ -119,6 +119,7 @@ make setup                 # venv, editable install, pre-commit hooks
 cp .env.example .env       # add the keys you have
 make check                 # everything CI runs
 make run                   # CLI help
+make ui                    # local UI at http://localhost:8501
 ```
 
 Requires Python 3.11. Tests run with no network; the tools are mocked.
