@@ -109,6 +109,7 @@ One call to a language model, kept so the final notebook can replay a run with n
 ## How it is stored
 
 - One file, `data/committee.db` by default. `data/` is gitignored, so it is never committed. Tests open `:memory:`.
+- The runner saves the `Run` plus earnings and market evidence immediately. Raw news stays in the runner snapshot until the news chain converts it to `Evidence`.
 - Tables are named `runs`, `evidence`, `claims`, `memory_notes`, `model_calls`, with the columns above.
 - The two list fields (`evidence_ids`, `open_gaps`) are stored as JSON text in one column. Booleans are stored as 0 and 1. Timestamps are ISO 8601 text.
 - Foreign keys are on: a row cannot be saved for a run that has not been saved.
