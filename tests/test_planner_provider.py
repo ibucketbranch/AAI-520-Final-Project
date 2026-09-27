@@ -1,16 +1,20 @@
 """Tests for selecting the planner provider without making network calls."""
 
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
+from openai import APIError
 from pydantic import ValidationError
 
 from investment_committee.agents.planner import (
     PlannedTasks,
+    PlannerProviderError,
     ResearchTask,
+    list_planner_models,
     plan_research,
 )
-from investment_committee.config import ENV_VARS, Settings
+from investment_committee.config import ENV_VARS, MissingKeyError, Settings
 from investment_committee.models import MemoryNote
 
 
@@ -54,7 +58,10 @@ def settings_with(**values):
     return Settings(values=current)
 
 
-def test_openai_provider_returns_a_research_plan_and_model_call():
+@pytest.mark.parametrize(
+    ("selected_model", "expected_model"), [(None, "test-model"), ("chosen-model", "chosen-model")]
+)
+def test_openai_provider_returns_a_research_plan_and_model_call(selected_model, expected_model):
     client = FakeClient()
     note = MemoryNote(
         run_id="old-run",
@@ -71,6 +78,7 @@ def test_openai_provider_returns_a_research_plan_and_model_call():
         previous_note=note,
         settings=settings_with(OPENAI_API_KEY="test-key", OPENAI_MODEL="test-model"),
         client=client,
+        model=selected_model,
     )
 
     assert result.plan.symbol == "AAPL"
@@ -83,7 +91,7 @@ def test_openai_provider_returns_a_research_plan_and_model_call():
     assert result.model_call.model == "test-openai-model"
     assert result.model_call.prompt_tokens == 80
     assert result.model_call.completion_tokens == 25
-    assert client.responses.request["model"] == "test-model"
+    assert client.responses.request["model"] == expected_model
     assert client.responses.request["text_format"] is PlannedTasks
 
 
@@ -145,3 +153,64 @@ def test_model_plan_rejects_the_same_source_twice():
                 ResearchTask(source="news", reason="Again"),
             ]
         )
+
+
+@pytest.fixture()
+def model_client(monkeypatch):
+    from unittest.mock import MagicMock
+
+    client = MagicMock()
+    client.__enter__.return_value = client
+    monkeypatch.setattr("investment_committee.agents.planner.OpenAI", Mock(return_value=client))
+    return client
+
+
+def test_model_list_uses_the_catalog_and_removes_unsuitable_variants(model_client):
+    names = [
+        "gpt-6-luna",
+        "gpt-4.1-mini",
+        "gpt-4.1-mini",
+        "o3-mini",
+        "o1-mini",
+        "gpt-4o-2024-05-13",
+        "gpt-4o-2024-08-06",
+        "gpt-4o-mini-transcribe",
+        "gpt-4o-mini-tts",
+        "gpt-4o-mini-search-preview",
+        "gpt-5-chat-latest",
+        "gpt-5.3-codex",
+        "text-embedding-3-small",
+        "gpt-image-2",
+        "gpt-3.5-turbo",
+    ]
+    model_client.models.list.return_value = [SimpleNamespace(id=name) for name in names]
+
+    models = list_planner_models("openai", settings_with(OPENAI_API_KEY="test-key"))
+
+    assert models == ["gpt-4.1-mini", "gpt-4o-2024-08-06", "gpt-6-luna", "o3-mini"]
+    model_client.models.list.assert_called_once()
+
+
+def test_model_list_reports_connection_errors(model_client):
+    model_client.models.list.side_effect = APIError("unavailable", request=Mock(), body=None)
+    with pytest.raises(PlannerProviderError, match="Could not load OpenAI models"):
+        list_planner_models("openai", settings_with(OPENAI_API_KEY="test-key"))
+
+
+def test_model_list_reports_no_matching_models(model_client):
+    model_client.models.list.return_value = [SimpleNamespace(id="whisper-1")]
+    with pytest.raises(PlannerProviderError, match="no matching text models"):
+        list_planner_models("openai", settings_with(OPENAI_API_KEY="test-key"))
+
+
+def test_rule_based_model_list_needs_no_key_or_request(model_client):
+    assert list_planner_models("rules", settings_with()) == []
+    model_client.models.list.assert_not_called()
+
+
+def test_model_list_requires_a_key_and_rejects_unknown_providers(model_client):
+    with pytest.raises(MissingKeyError):
+        list_planner_models("openai", settings_with())
+    with pytest.raises(ValueError, match="Unknown planner provider"):
+        list_planner_models("other", settings_with())
+    model_client.models.list.assert_not_called()

@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Literal
 
-from openai import OpenAI
+from openai import APIError, OpenAI
 from pydantic import BaseModel, Field, field_validator
 
 from investment_committee.config import MissingKeyError, Settings, load_settings
@@ -75,6 +75,39 @@ class PlanningResult:
     provider_used: PlannerProvider
     fallback_reason: str | None = None
     model_call: ModelCall | None = None
+
+
+def list_planner_models(provider: PlannerProvider, settings: Settings | None = None) -> list[str]:
+    """Load the provider's text models that could be used by the planner."""
+    if provider == "rules":
+        return []
+    if provider != "openai":
+        raise ValueError(f"Unknown planner provider: {provider}")
+
+    current_settings = settings or load_settings()
+    api_key = current_settings.require("OPENAI_API_KEY")
+    families = ("gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "o1", "o3", "o4")
+    excluded = ("audio", "realtime", "transcribe", "tts", "search", "codex", "chat", "preview")
+    models = []
+    try:
+        with OpenAI(api_key=api_key, timeout=10, max_retries=0) as client:
+            # The catalog has no capability flags, so remove known unsuitable variants.
+            for model in client.models.list():
+                if not model.id.startswith(families):
+                    continue
+                if model.id.startswith("o1-mini") or model.id == "gpt-4o-2024-05-13":
+                    continue
+                if any(word in model.id for word in excluded):
+                    continue
+                models.append(model.id)
+    except APIError as error:
+        raise PlannerProviderError(
+            "Could not load OpenAI models. Check the API key and connection."
+        ) from error
+
+    if not models:
+        raise PlannerProviderError("OpenAI returned no matching text models for this key.")
+    return sorted(set(models))
 
 
 def normalize_symbol(symbol: str) -> str:
@@ -166,10 +199,11 @@ def _build_openai_plan(
     previous_note: MemoryNote | None,
     settings: Settings,
     client: Any | None,
+    model: str | None,
 ) -> PlanningResult:
     """Ask OpenAI for ordered research tasks."""
     api_key = settings.require("OPENAI_API_KEY")
-    model = settings.values.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
+    model = model or settings.values.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
     openai_client = client or OpenAI(api_key=api_key)
     instructions = (
         "You are the planner for a student investment research project. "
@@ -223,11 +257,13 @@ def plan_research(
     previous_note: MemoryNote | None = None,
     settings: Settings | None = None,
     client: Any | None = None,
+    model: str | None = None,
 ) -> PlanningResult:
     """Build a research plan with the selected provider.
 
     OpenAI is the default. If its key is missing or the request fails, the
-    existing rule-based planner keeps the research run usable.
+    existing rule-based planner keeps the research run usable. A selected
+    model overrides OPENAI_MODEL; leaving it out uses the configured default.
     """
     normalized = normalize_symbol(symbol)
 
@@ -248,6 +284,7 @@ def plan_research(
             previous_note,
             current_settings,
             client,
+            model,
         )
     except (MissingKeyError, PlannerProviderError) as error:
         return PlanningResult(

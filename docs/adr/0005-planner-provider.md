@@ -14,6 +14,10 @@ Only providers that are implemented appear in the menu. Anthropic and Google can
 
 Successful planner calls are saved in SQLite with the run, evidence, token counts, and latency.
 
+The UI also queries the selected provider for model names. OpenAI's model list has no capability flags, so the menu filters for general text-model families and excludes known speech, search, coding, chat-only, and older unsupported variants. This is a best-effort filter, not a guarantee that every listed model accepts our schema. The existing planner fallback still applies if a selected model rejects the request.
+
+The selected model is passed through the runner to the planner. It overrides `OPENAI_MODEL` for that run. The UI caches the list for five minutes and offers a refresh button. If listing fails, it shows the configured default with a warning. Rule-based planning skips model discovery.
+
 ## Consequences
 
 The local interface can use a real model now and still works offline. Adding another provider does not require changes to the rest of the research workflow. OpenAI becomes a project dependency, and a live OpenAI run may use paid API credits.

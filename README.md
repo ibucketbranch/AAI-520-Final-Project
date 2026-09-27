@@ -125,6 +125,10 @@ make ui                    # local UI at http://localhost:8501
 
 Set `OPENAI_API_KEY` in `.env` to use the OpenAI planner. The Planner menu in
 the UI defaults to OpenAI and also offers the rule-based planner for offline runs.
+Choosing OpenAI loads its available text models into a Model menu. The selected
+model overrides `OPENAI_MODEL` for that run. The list is cached for five minutes;
+the refresh button reloads it. If the list cannot be loaded, the page shows a
+warning and keeps the configured default available. Rule-based planning needs no model.
 
 Each UI run is saved locally to `data/committee.db`. Earnings and market evidence are
 available immediately; news is saved as evidence after it passes through the news chain.

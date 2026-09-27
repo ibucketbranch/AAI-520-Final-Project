@@ -68,6 +68,7 @@ def run_research(
     gatherers: Mapping[Source, Gatherer] | None = None,
     database_path: str | Path | None = DEFAULT_DB_PATH,
     planner_provider: PlannerProvider = DEFAULT_PLANNER_PROVIDER,
+    planner_model: str | None = None,
 ) -> ResearchSnapshot:
     """Plan and gather the currently implemented research stages.
 
@@ -76,6 +77,7 @@ def run_research(
         gatherers: Optional injected gatherers, mainly for offline tests.
         database_path: SQLite file to write, or None to skip persistence.
         planner_provider: Planner implementation selected by the caller.
+        planner_model: Selected model, or None to use the provider's default.
 
     Returns:
         The run, its plan, results from each gatherer, and the message for
@@ -83,7 +85,7 @@ def run_research(
     """
     normalized = normalize_symbol(symbol)
     run = Run(symbol=normalized)
-    planning = plan_research(normalized, run.run_id, provider=planner_provider)
+    planning = plan_research(normalized, run.run_id, provider=planner_provider, model=planner_model)
     plan = planning.plan
     handlers = default_gatherers() if gatherers is None else gatherers
     gather_errors: dict[Source, str] = {}
