@@ -44,6 +44,7 @@ def test_run_research_normalizes_symbol_and_calls_each_gatherer():
             "market": lambda run: [_evidence(run, "market")],
         },
         database_path=None,
+        planner_provider="rules",
     )
 
     assert snapshot.run.symbol == "AAPL"
@@ -54,7 +55,7 @@ def test_run_research_normalizes_symbol_and_calls_each_gatherer():
 
 def test_run_research_rejects_an_invalid_symbol_before_gathering():
     with pytest.raises(ValueError, match="Invalid stock symbol"):
-        run_research("not a ticker", gatherers={}, database_path=None)
+        run_research("not a ticker", gatherers={}, database_path=None, planner_provider="rules")
 
 
 def test_run_research_saves_run_and_evidence_but_not_raw_news(tmp_path):
@@ -79,6 +80,7 @@ def test_run_research_saves_run_and_evidence_but_not_raw_news(tmp_path):
             "market": lambda run: [_evidence(run, "market")],
         },
         database_path=database_path,
+        planner_provider="rules",
     )
 
     with closing(open_db(database_path)) as conn:
@@ -106,6 +108,7 @@ def test_run_research_returns_gathered_results_when_atomic_save_fails(tmp_path):
             "market": lambda run: [],
         },
         database_path=database_path,
+        planner_provider="rules",
     )
 
     with closing(open_db(database_path)) as conn:
@@ -130,6 +133,7 @@ def test_run_research_keeps_other_sources_when_one_has_no_data():
             "market": lambda run: [_evidence(run, "market")],
         },
         database_path=None,
+        planner_provider="rules",
     )
 
     assert snapshot.gathered["earnings"] == []
@@ -148,4 +152,19 @@ def test_run_research_still_raises_unexpected_gatherer_errors():
             "AAPL",
             gatherers={"earnings": broken, "news": lambda run: [], "market": lambda run: []},
             database_path=None,
+            planner_provider="rules",
         )
+
+
+def test_run_research_reports_the_selected_rule_based_planner():
+    snapshot = run_research(
+        "AAPL",
+        gatherers={"earnings": lambda run: [], "news": lambda run: [], "market": lambda run: []},
+        database_path=None,
+        planner_provider="rules",
+    )
+
+    assert snapshot.planner_provider_requested == "rules"
+    assert snapshot.planner_provider_used == "rules"
+    assert snapshot.planner_fallback_reason is None
+    assert snapshot.planner_model is None

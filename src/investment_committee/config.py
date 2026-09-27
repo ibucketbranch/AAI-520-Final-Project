@@ -17,6 +17,7 @@ from pydantic import BaseModel
 # Every environment variable the project may read, in .env.example order.
 ENV_VARS: tuple[str, ...] = (
     "OPENAI_API_KEY",
+    "OPENAI_MODEL",
     "ANTHROPIC_API_KEY",
     "GOOGLE_API_KEY",
     "NEWSAPI_KEY",

@@ -19,6 +19,7 @@ from investment_committee.storage import (
     save_memory_note,
     save_model_call,
     save_run,
+    save_run_with_evidence,
     seed_from_json,
 )
 
@@ -149,6 +150,60 @@ def test_model_call_round_trip(conn):
     )
     save_model_call(conn, call)
     assert load_model_calls(conn, "r1") == [call]
+
+
+def test_run_evidence_and_model_call_are_saved_together():
+    conn = open_db(":memory:")
+    run = Run(run_id="r2", symbol="AAPL")
+    evidence = Evidence(
+        run_id="r2",
+        symbol="AAPL",
+        source="market",
+        title="Price",
+        content="$100.00",
+        as_of="2026-09-26",
+        reference="fixture:market",
+    )
+    call = ModelCall(
+        run_id="r2",
+        stage="planner",
+        model="test-model",
+        prompt="plan AAPL",
+        response="market first",
+    )
+
+    save_run_with_evidence(conn, run, [evidence], [call])
+
+    assert load_run(conn, "r2") == run
+    assert load_evidence(conn, "r2") == [evidence]
+    assert load_model_calls(conn, "r2") == [call]
+
+
+def test_model_call_failure_rolls_back_the_run_and_evidence():
+    conn = open_db(":memory:")
+    run = Run(run_id="r2", symbol="AAPL")
+    evidence = Evidence(
+        run_id="r2",
+        symbol="AAPL",
+        source="market",
+        title="Price",
+        content="$100.00",
+        as_of="2026-09-26",
+        reference="fixture:market",
+    )
+    wrong_call = ModelCall(
+        run_id="another-run",
+        stage="planner",
+        model="test-model",
+        prompt="plan AAPL",
+        response="market first",
+    )
+
+    with pytest.raises(sqlite3.IntegrityError):
+        save_run_with_evidence(conn, run, [evidence], [wrong_call])
+
+    assert load_run(conn, "r2") is None
+    assert load_evidence(conn, "r2") == []
 
 
 def test_seed_from_json_runs_once():

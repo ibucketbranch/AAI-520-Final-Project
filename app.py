@@ -38,6 +38,16 @@ def article_rows(items: list[RawArticle]) -> list[dict[str, str]]:
 def show_results(snapshot: ResearchSnapshot) -> None:
     """Render a completed research snapshot."""
     st.subheader(f"Research snapshot: {snapshot.run.symbol}")
+    if snapshot.planner_fallback_reason is not None:
+        st.warning(
+            "The OpenAI planner was not available, so the rule-based planner was used. "
+            f"{snapshot.planner_fallback_reason}"
+        )
+    elif snapshot.planner_model is not None:
+        st.caption(f"Planner: OpenAI ({snapshot.planner_model})")
+    else:
+        st.caption("Planner: Rule-based")
+
     if snapshot.storage_error is not None:
         st.warning(f"Research completed, but SQLite could not save it: {snapshot.storage_error}")
     elif snapshot.database_path is not None:
@@ -84,12 +94,14 @@ st.caption("Planner and live research gatherers")
 
 with st.form("research-form"):
     ticker = st.text_input("Stock symbol", value="AAPL", max_chars=10)
+    planner_name = st.selectbox("Planner", ["OpenAI", "Rule-based"], index=0)
     submitted = st.form_submit_button("Run research", type="primary")
 
 if submitted:
     try:
         with st.spinner(f"Gathering research for {ticker.strip().upper()}..."):
-            current_snapshot = run_research(ticker)
+            planner_provider = "openai" if planner_name == "OpenAI" else "rules"
+            current_snapshot = run_research(ticker, planner_provider=planner_provider)
     except Exception as error:  # Streamlit should report provider and validation failures cleanly.
         st.error(str(error))
     else:

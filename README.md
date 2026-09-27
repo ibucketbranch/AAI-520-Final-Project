@@ -74,7 +74,7 @@ Status per row in [docs/RUBRIC_MAP.md](docs/RUBRIC_MAP.md).
 
 ## Project Description
 
-The committee researches one stock symbol per run. Market and earnings numbers come from yfinance (price history, RSI, MACD, last-quarter results); news comes in as saved article JSON, with committed synthetic fixtures under `tests/fixtures/` so tests and the notebook run offline with no key. A local SQLite database is built on first run from committed sample data and holds the evidence pool, run transcripts, and cross-run memory notes; `storage.py` is the only module that touches it. The question the evaluation section answers: does the evaluator loop raise the share of supported claims? We run held-out symbols with and without the loop and count supported vs unsupported claims per run. Known roadblocks: yfinance is an unofficial Yahoo interface and can break without notice (the saved-article path covers the final notebook), and the v1 model choice is still open in [ADR-0002](docs/adr/0002-investment-committee-design.md).
+The committee researches one stock symbol per run. The planner uses OpenAI by default and can fall back to the rule-based plan when no key is available. Market and earnings numbers come from yfinance (price history, RSI, MACD, last-quarter results); news comes in as saved article JSON, with committed synthetic fixtures under `tests/fixtures/` so tests and the notebook run offline with no key. A local SQLite database is built on first run from committed sample data and holds the evidence pool, run transcripts, and cross-run memory notes; `storage.py` is the only module that touches it. The question the evaluation section answers: does the evaluator loop raise the share of supported claims? We run held-out symbols with and without the loop and count supported vs unsupported claims per run. A known roadblock is that yfinance is an unofficial Yahoo interface and can break without notice; the saved-article path covers the final notebook.
 
 ## Methods Used
 
@@ -86,7 +86,7 @@ The committee researches one stock symbol per run. Market and earnings numbers c
 
 ## Technologies
 
-- Python 3.11, pandas, numpy, pydantic
+- Python 3.11, pandas, numpy, pydantic, OpenAI API
 - yfinance, spaCy
 - SQLite
 - pytest with a 90 percent coverage floor, ruff, mypy, pre-commit, GitHub Actions
@@ -95,6 +95,7 @@ The committee researches one stock symbol per run. Market and earnings numbers c
 
 - **SQLite, one owner.** The notebook builds a local database on first run from committed sample data. One person owns the schema and `storage.py`; everything else goes through that module. Database files are never committed. [ADR-0003](docs/adr/0003-storage-choice.md)
 - **Contracts first.** `models.py` (shared record shapes) and `storage.py` (the only door to the database) land by Sep 22 so the three of us build in parallel.
+- **Selectable planner.** The UI uses OpenAI by default and keeps the rule-based planner as an offline option and fallback. [ADR-0005](docs/adr/0005-planner-provider.md)
 - **Stretch, only if v1 is done:** NLI claim checking, RAG over SEC EDGAR filings, a cross-model judge, and a small UI last.
 
 ## Plan
@@ -121,6 +122,9 @@ make check                 # everything CI runs
 make run                   # CLI help
 make ui                    # local UI at http://localhost:8501
 ```
+
+Set `OPENAI_API_KEY` in `.env` to use the OpenAI planner. The Planner menu in
+the UI defaults to OpenAI and also offers the rule-based planner for offline runs.
 
 Each UI run is saved locally to `data/committee.db`. Earnings and market evidence are
 available immediately; news is saved as evidence after it passes through the news chain.
