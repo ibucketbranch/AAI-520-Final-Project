@@ -24,6 +24,7 @@ dependencies = [
     "pydantic==2.13.5",
     "tenacity==9.1.4",
     "spacy==3.8.16",
+    "streamlit==1.64.0",
 ]
 
 [project.optional-dependencies]

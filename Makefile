@@ -1,5 +1,5 @@
 # Day-to-day commands for the AAI-520 final project repo. Run from the repo root.
-.PHONY: setup lint format typecheck test check nb-clean reqs run
+.PHONY: setup lint format typecheck test check nb-clean reqs run ui
 
 PYTHON ?= python3.11
 
@@ -36,3 +36,6 @@ reqs:             ## regenerate requirements files from pyproject.toml
 
 run:              ## show the CLI help
 	.venv/bin/python -m investment_committee --help
+
+ui:               ## start the local Streamlit interface
+	.venv/bin/streamlit run app.py
