@@ -30,6 +30,8 @@ _SYMBOL = re.compile(r"^[A-Z][A-Z0-9.-]{0,9}$")
 PlannerProvider = Literal["openai", "rules"]
 DEFAULT_PLANNER_PROVIDER: PlannerProvider = "openai"
 DEFAULT_OPENAI_MODEL = "gpt-6-luna"
+# Current model aliases; dated snapshots and older generations stay out of the menu.
+CURRENT_OPENAI_MODELS = ("gpt-6-luna", "gpt-6-sol", "gpt-6-astra")
 
 
 class PlannerProviderError(RuntimeError):
@@ -78,7 +80,7 @@ class PlanningResult:
 
 
 def list_planner_models(provider: PlannerProvider, settings: Settings | None = None) -> list[str]:
-    """Load the provider's text models that could be used by the planner."""
+    """Return current planner models available to this API key."""
     if provider == "rules":
         return []
     if provider != "openai":
@@ -86,28 +88,18 @@ def list_planner_models(provider: PlannerProvider, settings: Settings | None = N
 
     current_settings = settings or load_settings()
     api_key = current_settings.require("OPENAI_API_KEY")
-    families = ("gpt-4o", "gpt-4.1", "gpt-5", "gpt-6", "o1", "o3", "o4")
-    excluded = ("audio", "realtime", "transcribe", "tts", "search", "codex", "chat", "preview")
-    models = []
     try:
         with OpenAI(api_key=api_key, timeout=10, max_retries=0) as client:
-            # The catalog has no capability flags, so remove known unsuitable variants.
-            for model in client.models.list():
-                if not model.id.startswith(families):
-                    continue
-                if model.id.startswith("o1-mini") or model.id == "gpt-4o-2024-05-13":
-                    continue
-                if any(word in model.id for word in excluded):
-                    continue
-                models.append(model.id)
+            available = {model.id for model in client.models.list()}
     except APIError as error:
         raise PlannerProviderError(
             "Could not load OpenAI models. Check the API key and connection."
         ) from error
 
+    models = [model for model in CURRENT_OPENAI_MODELS if model in available]
     if not models:
-        raise PlannerProviderError("OpenAI returned no matching text models for this key.")
-    return sorted(set(models))
+        raise PlannerProviderError("OpenAI returned no current planner models for this key.")
+    return models
 
 
 def normalize_symbol(symbol: str) -> str:

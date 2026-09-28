@@ -5,6 +5,7 @@ from __future__ import annotations
 import streamlit as st
 
 from investment_committee.agents.planner import (
+    CURRENT_OPENAI_MODELS,
     DEFAULT_OPENAI_MODEL,
     PlannerProvider,
     PlannerProviderError,
@@ -115,6 +116,8 @@ with st.container(border=True):
 
     if planner_provider == "openai":
         default_model = load_settings().values.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
+        if default_model not in CURRENT_OPENAI_MODELS:
+            default_model = DEFAULT_OPENAI_MODEL
         model_column, refresh_column = st.columns([8, 1], vertical_alignment="bottom")
         with refresh_column:
             if st.button(
@@ -127,7 +130,7 @@ with st.container(border=True):
                 with st.spinner("Loading models..."):
                     models = available_models(planner_provider)
             except (MissingKeyError, PlannerProviderError) as error:
-                st.warning(f"{error} Showing the configured default: {default_model}.")
+                st.warning(f"{error} Showing the default model: {default_model}.")
                 models = [default_model]
 
             if st.session_state.get("openai_model") not in models:

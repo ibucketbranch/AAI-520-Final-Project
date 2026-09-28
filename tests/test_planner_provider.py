@@ -165,9 +165,13 @@ def model_client(monkeypatch):
     return client
 
 
-def test_model_list_uses_the_catalog_and_removes_unsuitable_variants(model_client):
+def test_model_list_shows_only_current_aliases_available_in_the_catalog(model_client):
     names = [
+        "gpt-6-sol",
         "gpt-6-luna",
+        "gpt-6-luna",
+        "gpt-6-astra-2026-09-01",
+        "gpt-5.6-sol",
         "gpt-4.1-mini",
         "gpt-4.1-mini",
         "o3-mini",
@@ -187,7 +191,7 @@ def test_model_list_uses_the_catalog_and_removes_unsuitable_variants(model_clien
 
     models = list_planner_models("openai", settings_with(OPENAI_API_KEY="test-key"))
 
-    assert models == ["gpt-4.1-mini", "gpt-4o-2024-08-06", "gpt-6-luna", "o3-mini"]
+    assert models == ["gpt-6-luna", "gpt-6-sol"]
     model_client.models.list.assert_called_once()
 
 
@@ -197,9 +201,10 @@ def test_model_list_reports_connection_errors(model_client):
         list_planner_models("openai", settings_with(OPENAI_API_KEY="test-key"))
 
 
-def test_model_list_reports_no_matching_models(model_client):
-    model_client.models.list.return_value = [SimpleNamespace(id="whisper-1")]
-    with pytest.raises(PlannerProviderError, match="no matching text models"):
+@pytest.mark.parametrize("names", [[], ["whisper-1"], ["gpt-5.6-sol", "gpt-4.1-mini"]])
+def test_model_list_reports_no_matching_models(model_client, names):
+    model_client.models.list.return_value = [SimpleNamespace(id=name) for name in names]
+    with pytest.raises(PlannerProviderError, match="no current planner models"):
         list_planner_models("openai", settings_with(OPENAI_API_KEY="test-key"))
 
 

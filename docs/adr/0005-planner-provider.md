@@ -14,9 +14,9 @@ Only providers that are implemented appear in the menu. Anthropic and Google can
 
 Successful planner calls are saved in SQLite with the run, evidence, token counts, and latency.
 
-The UI also queries the selected provider for model names. OpenAI's model list has no capability flags, so the menu filters for general text-model families and excludes known speech, search, coding, chat-only, and older unsupported variants. This is a best-effort filter, not a guarantee that every listed model accepts our schema. The existing planner fallback still applies if a selected model rejects the request.
+The UI also queries the selected provider for model names. As of Sep 28, the menu keeps only the current general-purpose aliases: `gpt-6-luna`, `gpt-6-sol`, and `gpt-6-astra`. Each name must also appear in the account's API catalog. This short list hides older generations and dated duplicates; it can be updated when the team adopts another model family. The existing planner fallback still applies if a selected model rejects the request.
 
-The selected model is passed through the runner to the planner. It overrides `OPENAI_MODEL` for that run. The UI caches the list for five minutes and offers a refresh button. If listing fails, it shows the configured default with a warning. Rule-based planning skips model discovery.
+The selected model is passed through the runner to the planner. It overrides `OPENAI_MODEL` for that run. The UI caches the list for five minutes and offers a refresh button. If listing fails, it shows a current default with a warning. An older configured default is replaced by `gpt-6-luna` in the UI. Rule-based planning skips model discovery.
 
 ## Consequences
 

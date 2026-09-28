@@ -17,7 +17,7 @@ APP = Path(__file__).parents[1] / "app.py"
 @pytest.fixture()
 def ui_services(monkeypatch):
     st.cache_data.clear()
-    catalog = Mock(return_value=["gpt-4.1-mini", "gpt-6-luna"])
+    catalog = Mock(return_value=["gpt-6-luna", "gpt-6-sol", "gpt-6-astra"])
     snapshot = run_research(
         "AAPL",
         gatherers={"earnings": lambda run: [], "news": lambda run: [], "market": lambda run: []},
@@ -37,14 +37,14 @@ def test_ui_loads_models_and_passes_the_selection_only_when_run_is_clicked(ui_se
     app = AppTest.from_file(str(APP)).run()
     assert not app.exception
     assert app.selectbox(key="openai_model").value == "gpt-6-luna"
-    app.selectbox(key="openai_model").select("gpt-4.1-mini").run()
+    app.selectbox(key="openai_model").select("gpt-6-sol").run()
     runner.assert_not_called()
     catalog.assert_called_once_with("openai")
 
     app.button(key="run_research").click().run()
     assert not app.exception
     assert not app.error
-    runner.assert_called_once_with("AAPL", planner_provider="openai", planner_model="gpt-4.1-mini")
+    runner.assert_called_once_with("AAPL", planner_provider="openai", planner_model="gpt-6-sol")
     assert len(app.subheader) == 1
 
     app.selectbox(key="openai_model").select("gpt-6-luna").run()
@@ -66,12 +66,16 @@ def test_switching_to_rules_hides_models_and_skips_discovery(ui_services):
     assert app.selectbox(key="openai_model").value == "gpt-6-luna"
 
 
-def test_catalog_failure_shows_default_and_refresh_recovers(ui_services):
+def test_catalog_failure_keeps_old_defaults_hidden_and_refresh_recovers(ui_services, monkeypatch):
     catalog, runner = ui_services
+    monkeypatch.setattr(
+        "investment_committee.config.load_settings",
+        lambda: Settings(values={"OPENAI_MODEL": "gpt-4.1-mini"}),
+    )
     catalog.side_effect = PlannerProviderError("Could not load OpenAI models.")
     app = AppTest.from_file(str(APP)).run()
     assert not app.exception
-    assert "configured default" in app.warning[0].value
+    assert "default model" in app.warning[0].value
     assert app.selectbox(key="openai_model").options == ["gpt-6-luna"]
     runner.assert_not_called()
 
@@ -79,14 +83,14 @@ def test_catalog_failure_shows_default_and_refresh_recovers(ui_services):
     app.button(key="refresh_models").click().run()
     assert not app.exception
     assert not app.warning
-    assert app.selectbox(key="openai_model").options == ["gpt-4.1-mini", "gpt-6-luna"]
+    assert app.selectbox(key="openai_model").options == ["gpt-6-luna", "gpt-6-sol", "gpt-6-astra"]
 
 
 def test_unavailable_default_is_not_added_to_the_provider_list(ui_services):
     catalog, runner = ui_services
-    catalog.return_value = ["gpt-4.1-mini"]
+    catalog.return_value = ["gpt-6-sol"]
     app = AppTest.from_file(str(APP)).run()
     assert not app.exception
-    assert app.selectbox(key="openai_model").options == ["gpt-4.1-mini"]
-    assert app.selectbox(key="openai_model").value == "gpt-4.1-mini"
+    assert app.selectbox(key="openai_model").options == ["gpt-6-sol"]
+    assert app.selectbox(key="openai_model").value == "gpt-6-sol"
     runner.assert_not_called()
