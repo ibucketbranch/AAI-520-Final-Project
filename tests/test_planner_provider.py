@@ -140,6 +140,37 @@ def test_provider_failure_falls_back_to_the_rule_based_plan():
     assert result.fallback_reason == "OpenAI could not create a research plan."
 
 
+def test_openai_provider_uses_budgeted_owned_client_context(monkeypatch):
+    from unittest.mock import MagicMock
+
+    owned_client = MagicMock()
+    owned_client.__enter__.return_value = owned_client
+    owned_client.responses.parse.return_value = SimpleNamespace(
+        output_parsed=PlannedTasks(
+            tasks=[
+                ResearchTask(source="news", reason="Check recent events."),
+                ResearchTask(source="market", reason="Check current trend."),
+            ]
+        ),
+        model="test-openai-model",
+        usage=SimpleNamespace(input_tokens=10, output_tokens=5),
+    )
+    openai_ctor = Mock(return_value=owned_client)
+    monkeypatch.setattr("investment_committee.agents.planner.OpenAI", openai_ctor)
+
+    result = plan_research(
+        "AAPL",
+        run_id="new-run",
+        provider="openai",
+        settings=settings_with(OPENAI_API_KEY="test-key"),
+    )
+
+    assert result.provider_used == "openai"
+    openai_ctor.assert_called_once_with(api_key="test-key", timeout=10, max_retries=0)
+    owned_client.__enter__.assert_called_once()
+    owned_client.__exit__.assert_called_once()
+
+
 def test_unknown_provider_is_rejected():
     with pytest.raises(ValueError, match="Unknown planner provider"):
         plan_research("AAPL", run_id="new-run", provider="other")  # type: ignore[arg-type]

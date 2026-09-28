@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from contextlib import nullcontext
 from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Literal
@@ -196,7 +197,11 @@ def _build_openai_plan(
     """Ask OpenAI for ordered research tasks."""
     api_key = settings.require("OPENAI_API_KEY")
     model = model or settings.values.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
-    openai_client = client or OpenAI(api_key=api_key)
+    openai_client_cm = (
+        nullcontext(client)
+        if client is not None
+        else OpenAI(api_key=api_key, timeout=10, max_retries=0)
+    )
     instructions = (
         "You are the planner for a student investment research project. "
         "Return only a small research plan using the available sources."
@@ -205,12 +210,13 @@ def _build_openai_plan(
     started = perf_counter()
 
     try:
-        response = openai_client.responses.parse(
-            model=model,
-            instructions=instructions,
-            input=prompt,
-            text_format=PlannedTasks,
-        )
+        with openai_client_cm as openai_client:
+            response = openai_client.responses.parse(
+                model=model,
+                instructions=instructions,
+                input=prompt,
+                text_format=PlannedTasks,
+            )
     except Exception as error:
         raise PlannerProviderError("OpenAI could not create a research plan.") from error
 
