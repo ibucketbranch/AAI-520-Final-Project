@@ -126,6 +126,31 @@ def _insert_evidence(conn: sqlite3.Connection, items: list[Evidence]) -> None:
     )
 
 
+def _insert_model_calls(conn: sqlite3.Connection, calls: list[ModelCall]) -> None:
+    """Insert model calls without controlling the surrounding transaction."""
+    rows = [
+        (
+            call.call_id,
+            call.run_id,
+            call.stage,
+            call.model,
+            call.prompt,
+            call.response,
+            call.prompt_tokens,
+            call.completion_tokens,
+            call.latency_ms,
+            call.created_at,
+        )
+        for call in calls
+    ]
+    conn.executemany(
+        "INSERT INTO model_calls (call_id, run_id, stage, model, prompt, response,"
+        " prompt_tokens, completion_tokens, latency_ms, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+
+
 def save_run(conn: sqlite3.Connection, run: Run) -> None:
     """Insert a new run. Save the run before anything that points at it."""
     with conn:
@@ -151,11 +176,13 @@ def save_run_with_evidence(
     conn: sqlite3.Connection,
     run: Run,
     items: list[Evidence],
+    model_calls: list[ModelCall] | None = None,
 ) -> None:
-    """Insert one run and its initial evidence as a single transaction."""
+    """Insert one run, its evidence, and model calls as one transaction."""
     with conn:
         _insert_run(conn, run)
         _insert_evidence(conn, items)
+        _insert_model_calls(conn, model_calls or [])
 
 
 def save_claim(conn: sqlite3.Connection, claim: Claim) -> None:
@@ -202,23 +229,7 @@ def save_memory_note(conn: sqlite3.Connection, note: MemoryNote) -> None:
 def save_model_call(conn: sqlite3.Connection, call: ModelCall) -> None:
     """Log one model call."""
     with conn:
-        conn.execute(
-            "INSERT INTO model_calls (call_id, run_id, stage, model, prompt, response,"
-            " prompt_tokens, completion_tokens, latency_ms, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                call.call_id,
-                call.run_id,
-                call.stage,
-                call.model,
-                call.prompt,
-                call.response,
-                call.prompt_tokens,
-                call.completion_tokens,
-                call.latency_ms,
-                call.created_at,
-            ),
-        )
+        _insert_model_calls(conn, [call])
 
 
 # ---- reads ------------------------------------------------------------------
