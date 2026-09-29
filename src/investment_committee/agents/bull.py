@@ -11,6 +11,10 @@ real model behind the same function.
 
 from __future__ import annotations
 
+from typing import Any
+
+from investment_committee.agents.analyst import DraftingResult, draft_claims_model
+from investment_committee.config import Settings
 from investment_committee.models import Claim, Evidence
 
 
@@ -36,3 +40,19 @@ def draft_bull_claims(evidence: list[Evidence]) -> list[Claim]:
             )
         )
     return claims
+
+
+def draft_bull_claims_model(
+    evidence: list[Evidence],
+    settings: Settings,
+    *,
+    revise: list[Claim] | None = None,
+    model: str | None = None,
+    client: Any | None = None,
+) -> DraftingResult:
+    """Draft the optimistic case with a model call.
+
+    Same contract as draft_claims_model with side "bull"; the templated
+    draft_bull_claims above stays as the no-key fallback.
+    """
+    return draft_claims_model("bull", evidence, settings, revise=revise, model=model, client=client)
