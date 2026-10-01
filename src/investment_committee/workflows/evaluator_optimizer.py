@@ -169,6 +169,24 @@ def _decide(
     return verdict.side, verdict.reason, call
 
 
+def _without_repeats(new_claims: list[Claim], kept: list[Claim]) -> list[Claim]:
+    """Drop redrafted claims that repeat a kept claim, and within-batch repeats.
+
+    The revise prompt tells the model to return only replacements, but a
+    model that redrafts everything anyway would otherwise duplicate the
+    survivors in the final set; comparison is on normalized text.
+    """
+    seen = {claim.text.strip().casefold() for claim in kept}
+    unique: list[Claim] = []
+    for claim in new_claims:
+        normalized = claim.text.strip().casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique.append(claim)
+    return unique
+
+
 def _memo(verdict: Verdict, reason: str, claims: list[Claim], rounds: int) -> str:
     """Write the plain-text memo: verdict first, diagnostics after."""
     supported = [claim for claim in claims if claim.supported]
@@ -277,11 +295,13 @@ def run_committee(
                 current_settings,
                 provider=provider,
                 revise=rejected,
+                keep=side_kept,
                 revision=rounds,
                 model=model,
                 client=client,
             )
-            redrafted.extend(drafted(result, f"{side} round {rounds}"))
+            replacements = _without_repeats(drafted(result, f"{side} round {rounds}"), side_kept)
+            redrafted.extend(replacements)
             redrafted.extend(side_kept)
         current = redrafted
 

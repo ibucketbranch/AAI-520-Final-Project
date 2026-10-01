@@ -99,7 +99,12 @@ def _trimmed(content: str) -> str:
     return content[:_CONTENT_CHARS] + " [...]"
 
 
-def _drafting_prompt(side: Side, evidence: list[Evidence], revise: list[Claim] | None) -> str:
+def _drafting_prompt(
+    side: Side,
+    evidence: list[Evidence],
+    revise: list[Claim] | None,
+    keep: list[Claim] | None,
+) -> str:
     """Build the drafting prompt from the pool and any claims to revise."""
     pool = [
         {
@@ -120,6 +125,11 @@ def _drafting_prompt(side: Side, evidence: list[Evidence], revise: list[Claim] |
         "genuinely supports. Every claim must cite the "
         "evidence_ids it rests on, and only ids from the list above.",
     ]
+    if keep:
+        lines.append(
+            "These claims were already accepted and will be kept; do not repeat "
+            "or rephrase them:\n" + json.dumps([claim.text for claim in keep])
+        )
     if revise:
         rejected = [
             {
@@ -147,6 +157,7 @@ def draft_claims_model(
     settings: Settings,
     *,
     revise: list[Claim] | None = None,
+    keep: list[Claim] | None = None,
     revision: int = 0,
     model: str | None = None,
     client: Any | None = None,
@@ -160,6 +171,8 @@ def draft_claims_model(
         revise: Claims the evaluator rejected, when this is a refinement
             round. Only this side's unsupported claims are used; anything
             else is filtered out.
+        keep: Claims that survived evaluation and stay as they are; the
+            model is told to return only replacements, never repeats.
         revision: The revision number the caller stamps on these claims;
             the evaluator-optimizer loop owns the counting.
         model: Model override; defaults to OPENAI_MODEL, then the planner's
@@ -189,8 +202,10 @@ def draft_claims_model(
         revise = [
             claim for claim in revise if claim.side == side and claim.supported is False
         ] or None
+    if keep:
+        keep = [claim for claim in keep if claim.side == side] or None
     instructions = _PERSONAS[side]
-    prompt = _drafting_prompt(side, evidence, revise)
+    prompt = _drafting_prompt(side, evidence, revise, keep)
     started = perf_counter()
 
     try:
@@ -257,6 +272,7 @@ def draft_claims_with_fallback(
     *,
     provider: AnalystProvider = "openai",
     revise: list[Claim] | None = None,
+    keep: list[Claim] | None = None,
     revision: int = 0,
     model: str | None = None,
     client: Any | None = None,
@@ -276,6 +292,7 @@ def draft_claims_with_fallback(
         settings: Environment snapshot.
         provider: "openai" or "template".
         revise: Rejected claims for a refinement round.
+        keep: Surviving claims the model must not repeat.
         revision: Revision number stamped on the drafted claims.
         model: Model override for the openai path.
         client: Injected client for tests.
@@ -293,6 +310,7 @@ def draft_claims_with_fallback(
                 evidence,
                 settings,
                 revise=revise,
+                keep=keep,
                 revision=revision,
                 model=model,
                 client=client,

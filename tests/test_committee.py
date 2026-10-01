@@ -207,3 +207,50 @@ def test_storage_adapter_rejects_unknown_run(tmp_path):
     with open_db(tmp_path / "empty.db") as conn:
         with pytest.raises(ValueError):
             run_committee_from_storage(conn, "missing-run", settings_with())
+
+
+def test_redraft_that_repeats_kept_claims_is_deduped():
+    """A model that redrafts everything must not duplicate the survivors.
+
+    Caught live on 2026-09-30: the bull redraft repeated the kept revenue,
+    EPS, and RSI claims and the memo listed them twice.
+    """
+    run = make_run()
+    client = RoutingFakeClient(
+        drafts=[
+            DraftedClaims(
+                claims=[
+                    DraftedClaim(text="Revenue grew", evidence_ids=["ev-1"]),
+                    DraftedClaim(text="Bad bull claim", evidence_ids=["ev-fake"]),
+                ]
+            ),
+            one_claim("ev-2", text="Bear argument"),
+            DraftedClaims(
+                claims=[
+                    DraftedClaim(text="Revenue grew", evidence_ids=["ev-1"]),
+                    DraftedClaim(text="A grounded replacement", evidence_ids=["ev-2"]),
+                ]
+            ),
+        ],
+        verdicts=[
+            ClaimVerdict(supported=True, reason="fine"),
+            ClaimVerdict(supported=True, reason="fine"),
+            ClaimVerdict(supported=True, reason="fine"),
+            ClaimVerdict(supported=True, reason="fine"),
+            ClaimVerdict(supported=True, reason="fine"),
+        ],
+        decisions=[CommitteeVerdict(side="bull", reason="growth case held")],
+    )
+    result = run_committee(run, pool(run.run_id), settings_with(OPENAI_API_KEY="k"), client=client)
+    bull_texts = [claim.text for claim in result.claims if claim.side == "bull"]
+    assert bull_texts.count("Revenue grew") == 1
+    assert "A grounded replacement" in bull_texts
+    assert "Bad bull claim" not in bull_texts
+    revise_requests = [
+        request["input"]
+        for request in client.responses.requests
+        if "rejected by the evaluator" in request["input"]
+    ]
+    assert len(revise_requests) == 1
+    assert "do not repeat" in revise_requests[0]
+    assert "Revenue grew" in revise_requests[0]
