@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Literal
 
-from openai import OpenAI, OpenAIError
+from openai import APIError, OpenAI, OpenAIError
 from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from investment_committee.config import MissingKeyError, Settings, load_settings
@@ -94,7 +94,7 @@ def list_planner_models(provider: PlannerProvider, settings: Settings | None = N
             api_key=api_key, timeout=current_settings.openai_timeout(), max_retries=0
         ) as client:
             available = {model.id for model in client.models.list()}
-    except OpenAIError as error:
+    except APIError as error:
         raise PlannerProviderError(
             "Could not load OpenAI models. Check the API key and connection."
         ) from error
