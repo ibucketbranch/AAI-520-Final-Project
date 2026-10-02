@@ -10,6 +10,7 @@ a tool call.
 from __future__ import annotations
 
 import os
+from math import isfinite
 
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -18,11 +19,11 @@ from pydantic import BaseModel
 ENV_VARS: tuple[str, ...] = (
     "OPENAI_API_KEY",
     "OPENAI_MODEL",
+    "OPENAI_TIMEOUT",
     "ANTHROPIC_API_KEY",
     "GOOGLE_API_KEY",
     "NEWSAPI_KEY",
     "FRED_API_KEY",
-    "DATABASE_URL",
 )
 
 
@@ -49,6 +50,17 @@ class Settings(BaseModel):
     """
 
     values: dict[str, str | None]
+
+    def openai_timeout(self) -> float:
+        """Return the shared request timeout in seconds, defaulting to 30."""
+        value = self.values.get("OPENAI_TIMEOUT") or "30"
+        try:
+            timeout = float(value)
+        except ValueError as error:
+            raise ValueError("OPENAI_TIMEOUT must be a positive number of seconds.") from error
+        if not isfinite(timeout) or timeout <= 0:
+            raise ValueError("OPENAI_TIMEOUT must be a positive number of seconds.")
+        return timeout
 
     def require(self, name: str) -> str:
         """Return the value of a required key or raise MissingKeyError.

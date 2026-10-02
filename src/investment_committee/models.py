@@ -42,11 +42,13 @@ class Run(BaseModel):
     with_review is False for the "without the review loop" runs in the
     evaluation, so the two kinds can be told apart afterwards. memo and
     finished_at are filled in when the run completes.
+    parent_run_id links a committee run to the gathering run that owns its evidence.
     """
 
     run_id: str = Field(default_factory=new_id)
     symbol: str
     with_review: bool = True
+    parent_run_id: str | None = None
     started_at: str = Field(default_factory=now_iso)
     finished_at: str | None = None
     memo: str | None = None

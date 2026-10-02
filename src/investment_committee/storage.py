@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS runs (
     with_review INTEGER NOT NULL,
     started_at  TEXT NOT NULL,
     finished_at TEXT,
-    memo        TEXT
+    memo        TEXT,
+    parent_run_id TEXT REFERENCES runs(run_id)
 );
 
 CREATE TABLE IF NOT EXISTS evidence (
@@ -96,8 +97,20 @@ def open_db(path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(SCHEMA)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.executescript(SCHEMA)
+        # Serialize the check and migration when two app sessions start together.
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+            if "parent_run_id" not in columns:
+                conn.execute(
+                    "ALTER TABLE runs ADD COLUMN parent_run_id TEXT REFERENCES runs(run_id)"
+                )
+    except sqlite3.Error:
+        conn.close()
+        raise
     return conn
 
 
@@ -107,9 +120,17 @@ def open_db(path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
 def _insert_run(conn: sqlite3.Connection, run: Run) -> None:
     """Insert a run without controlling the surrounding transaction."""
     conn.execute(
-        "INSERT INTO runs (run_id, symbol, with_review, started_at, finished_at, memo)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (run.run_id, run.symbol, run.with_review, run.started_at, run.finished_at, run.memo),
+        "INSERT INTO runs (run_id, symbol, with_review, started_at, finished_at, memo, parent_run_id)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            run.run_id,
+            run.symbol,
+            run.with_review,
+            run.started_at,
+            run.finished_at,
+            run.memo,
+            run.parent_run_id,
+        ),
     )
 
 
