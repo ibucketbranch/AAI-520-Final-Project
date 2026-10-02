@@ -15,8 +15,7 @@ Only providers that are implemented appear in the menu. Anthropic and Google can
 Successful planner calls are saved in SQLite with the run, evidence, token counts, and latency.
 
 `OPENAI_TIMEOUT` sets the request timeout in seconds (default 30). Both planner
-requests and model discovery use `Settings.openai_timeout()`. Michael's analyst
-client should use this same method when its PR is connected. Provider errors
+requests and model discovery use `Settings.openai_timeout()`. Provider errors
 and invalid structured responses fall back to rules; programming errors are
 not caught as provider failures.
 

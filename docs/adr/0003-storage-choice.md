@@ -33,22 +33,17 @@ deliverable, due Sep 22. `DATABASE_URL` is not used and has been removed from
 the configuration example. A hosted backend would need a separate implementation.
 The gitignore carries the database file patterns.
 
-## Committee handoff
+## Committee storage
 
 The committee stays separate from `run_research`. The gathering run owns the
 evidence. Both committee runs point to it through nullable `Run.parent_run_id`.
 Each committee run has its own `with_review` flag, claims, model calls, and memo.
 `open_db` adds the parent column to older databases without deleting their data.
 
-Michael's committee code should load evidence using the parent ID, but assign
-claims and model calls to the committee run ID. Keep the original evidence IDs
-on claims; do not copy evidence rows just to change their run ID.
-
-For Mina's comparison, both variants should start from the same evidence and
-initial Bull/Bear draft. Only one variant goes through review. Generating two
-fresh drafts would introduce another source of variation. Evaluation notes
-should not be saved into normal planner memory; the harness can keep those
-notes in its results until the team adds an explicit experiment marker.
+Evidence is loaded using the parent ID. Claims and model calls belong to the
+committee run ID, while claim citations keep the original evidence IDs.
+Comparison queries must filter with `WHERE parent_run_id IS NOT NULL` so the
+gathering run's default `with_review=True` is not counted as a reviewed result.
 
 The runner now reads the latest note for the ticker before planning. A failed
 memory read is reported separately from a failed save. Until the news chain is
