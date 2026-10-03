@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING
 
 from pydantic import BaseModel
 
+from investment_committee.models import Evidence, Run
+
 if TYPE_CHECKING:  # pragma: no cover - typing only; the spacy import stays lazy at runtime
     from spacy.language import Language
 
@@ -73,11 +75,18 @@ class Entity(BaseModel):
 
 
 class ProcessedArticle(BaseModel):
-    """An article after the full chain: cleaned, classified, tagged, summarized."""
+    """An article after the full chain: cleaned, classified, tagged, summarized.
+
+    ``accepted`` records the decision made by the classification gate.  Keeping
+    the gate decision in the processed object makes the handoff auditable and
+    lets the evaluation notebook count rejected news without re-running NLP.
+    """
 
     article: RawArticle
     clean_text: str
     category: str
+    accepted: bool
+    gate_reason: str
     entities: list[Entity]
     summary: str
 
@@ -172,6 +181,35 @@ def classify(text: str) -> str:
     return "general"
 
 
+# Categories that are considered actionable for the investment evidence pool.
+# ``general`` remains useful for diagnostics, but it is not promoted to shared
+# Evidence by default because the classifier did not identify an investment
+# driver.  The tuple is deliberately explicit so a future model can replace
+# ``classify()`` without changing the gate contract.
+_GATE_CATEGORIES: frozenset[str] = frozenset(_CATEGORY_KEYWORDS)
+
+
+def classification_gate(category: str) -> tuple[bool, str]:
+    """Decide whether a classified article may continue through the chain.
+
+    The gate sits immediately after ``classify()``.  Known investment-driver
+    categories continue; ``general`` and unknown labels are stopped.  The
+    decision and reason are returned together so downstream code can explain
+    why an article was or was not promoted to Evidence.
+
+    Args:
+        category: Label returned by ``classify()``.
+
+    Returns:
+        ``(accepted, reason)``.  Accepted articles get a short audit reason;
+        rejected articles identify the category that failed the gate.
+    """
+    normalized = category.strip().casefold()
+    if normalized in _GATE_CATEGORIES:
+        return True, f"accepted classification: {normalized}"
+    return False, f"rejected classification: {normalized or 'empty'}"
+
+
 def load_nlp() -> Language:
     """Load the small English spaCy pipeline for entity extraction.
 
@@ -234,24 +272,79 @@ def summarize(text: str, max_sentences: int = 2) -> str:
 
 
 def run_chain(articles: list[RawArticle], nlp: Language) -> list[ProcessedArticle]:
-    """Run every stage over a batch of articles.
+    """Run ingest output through preprocess, classify, gate, extract, summarize.
+
+    The gate is evaluated immediately after classification.  For backwards
+    compatibility with the Sep 15 chain, NER and summarization still run for
+    every surviving preprocessed article; the gate controls promotion into the
+    shared Evidence pool rather than deleting an article from the chain output.
 
     Args:
-        articles: Ingested articles (from ingest() now, a live tool later).
-        nlp: The spaCy pipeline for extract().
+        articles: Ingested articles from the live news tool or a fixture.
+        nlp: The spaCy pipeline used by ``extract()``.
 
     Returns:
-        One ProcessedArticle per surviving article, in input order.
+        One ``ProcessedArticle`` for every article that survives preprocessing.
+        Rejected articles remain in the result with ``accepted=False`` so the
+        evaluation code can measure the gate instead of silently losing them.
     """
     processed: list[ProcessedArticle] = []
     for article, cleaned in preprocess(articles):
+        category = classify(cleaned)
+        accepted, gate_reason = classification_gate(category)
+
+        # The gate sits after classification.  We still finish the original
+        # chain for compatibility and auditability; processed_to_evidence()
+        # enforces the gate at the shared-model boundary.
+        entities = extract(cleaned, nlp)
+        summary = summarize(cleaned)
+
         processed.append(
             ProcessedArticle(
                 article=article,
                 clean_text=cleaned,
-                category=classify(cleaned),
-                entities=extract(cleaned, nlp),
-                summary=summarize(cleaned),
+                category=category,
+                accepted=accepted,
+                gate_reason=gate_reason,
+                entities=entities,
+                summary=summary,
             )
         )
     return processed
+
+
+def processed_to_evidence(run: Run, articles: list[ProcessedArticle]) -> list[Evidence]:
+    """Convert accepted news-chain output into the project's shared Evidence model.
+
+    This is the ownership boundary between the news chain and the rest of the
+    investment committee.  The chain owns article processing; the shared
+    ``Evidence`` model is the contract consumed by Bull, Bear, and Evaluator.
+
+    Each accepted article becomes one evidence item.  The evidence content is
+    the chain's extractive summary, while the original title and source URL or
+    provider identifier remain available in the title/reference fields.
+
+    Args:
+        run: Shared run record that owns the evidence.
+        articles: Output from ``run_chain()``.
+
+    Returns:
+        Evidence records for accepted articles only.
+    """
+    evidence: list[Evidence] = []
+    for item in articles:
+        if not item.accepted:
+            continue
+
+        evidence.append(
+            Evidence(
+                run_id=run.run_id,
+                symbol=run.symbol,
+                source="news",
+                title=item.article.title,
+                content=item.summary or item.clean_text,
+                as_of=item.article.published,
+                reference=item.article.source,
+            )
+        )
+    return evidence

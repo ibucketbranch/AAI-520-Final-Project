@@ -13,6 +13,12 @@ from investment_committee.models import Evidence, Run, Source
 from investment_committee.storage import DEFAULT_DB_PATH, open_db, save_run_with_evidence
 from investment_committee.tools.earnings import EarningsDataError
 from investment_committee.tools.market import MarketDataError
+from investment_committee.workflows.chaining import (
+    RawArticle,
+    load_nlp,
+    processed_to_evidence,
+    run_chain,
+)
 from investment_committee.workflows.routing import (
     Gatherer,
     GathererResult,
@@ -79,12 +85,23 @@ def run_research(
         for source, handler in handlers.items()
     }
     gathered = route_plan(run, plan, gatherers=safe_handlers)
+    # Earnings and market already emit shared Evidence records.  News emits
+    # RawArticle objects because it still needs the NLP chain.  For the live
+    # path (default gatherers), load the spaCy pipeline lazily and promote only
+    # gate-approved news to the same shared Evidence pool.
     evidence = [
         item
         for source_results in gathered.values()
         for item in source_results
         if isinstance(item, Evidence)
     ]
+
+    news_items = gathered.get("news", [])
+    if news_items and all(isinstance(item, RawArticle) for item in news_items):
+        nlp = load_nlp() if gatherers is None else None
+        if nlp is not None:
+            processed_news = run_chain(news_items, nlp)
+            evidence.extend(processed_to_evidence(run, processed_news))
 
     saved_path: str | None = None
     saved_count = 0
