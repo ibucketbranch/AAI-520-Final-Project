@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 import pandas as pd
 import pytest
+import requests
 
+from investment_committee.config import ENV_VARS, Settings
 from investment_committee.models import Run
 from investment_committee.tools.earnings import EarningsDataError, gather_earnings
 from investment_committee.tools.market import MarketDataError, gather_market
@@ -84,6 +86,23 @@ def test_earnings_gatherer_formats_losses_with_the_sign_before_dollars():
     assert "-$0.50 per share" in evidence[2].content
 
 
+def settings_with(**values):
+    current = {name: None for name in ENV_VARS}
+    current.update(values)
+    return Settings(values=current)
+
+
+def fake_get(payload, calls=None):
+    """Stand-in for requests.get that records the call and returns payload."""
+
+    def get(url, **kwargs):
+        if calls is not None:
+            calls.append({"url": url, **kwargs})
+        return SimpleNamespace(json=lambda: payload)
+
+    return get
+
+
 def test_news_gatherer_normalizes_current_and_legacy_records():
     timestamp = int(datetime(2026, 9, 21, tzinfo=UTC).timestamp())
     records = [
@@ -138,6 +157,7 @@ def test_news_gatherer_falls_back_to_search_headlines():
         Run(symbol="AAPL"),
         ticker_factory=lambda symbol: SimpleNamespace(news=[]),
         search_factory=lambda symbol: search,
+        settings=settings_with(),
     )
 
     assert [article.article_id for article in articles] == ["search-1"]
@@ -146,9 +166,109 @@ def test_news_gatherer_falls_back_to_search_headlines():
 
 
 def test_news_gatherer_reports_when_yahoo_has_no_news():
-    with pytest.raises(NewsDataError, match="Yahoo returned no news for AAPL"):
+    with pytest.raises(NewsDataError, match="No news found for AAPL"):
         gather_news(
             Run(symbol="AAPL"),
             ticker_factory=lambda symbol: SimpleNamespace(news=None),
             search_factory=lambda symbol: SimpleNamespace(news=[]),
+            settings=settings_with(),
         )
+
+
+NEWSAPI_PAYLOAD = {
+    "status": "ok",
+    "articles": [
+        {
+            "source": {"id": None, "name": "Example Wire"},
+            "title": "Apple raises its dividend",
+            "description": "Apple said it will raise the dividend.",
+            "content": "Apple said it will raise the dividend. The board met on Tuesday. [+812 chars]",
+            "url": "https://example.com/apple-dividend",
+            "publishedAt": "2026-10-01T14:00:00Z",
+        },
+        {
+            "source": {"name": "Example Desk"},
+            "title": "Apple opens a new store",
+            "description": "The store is in Austin.",
+            "content": "Customers lined up early.",
+            "url": "https://example.com/apple-store",
+            "publishedAt": "2026-09-30T09:00:00Z",
+        },
+        {"source": {"name": "Gone"}, "title": "[Removed]", "description": "[Removed]"},
+    ],
+}
+
+
+def test_newsapi_is_used_when_ticker_news_is_empty():
+    calls = []
+    ticker = SimpleNamespace(news=[], info={"shortName": "Apple Inc."})
+
+    articles = gather_news(
+        Run(symbol="AAPL"),
+        ticker_factory=lambda symbol: ticker,
+        search_factory=lambda symbol: pytest.fail("Search should not be called"),
+        settings=settings_with(NEWSAPI_KEY="test-key"),
+        http_get=fake_get(NEWSAPI_PAYLOAD, calls),
+    )
+
+    assert [article.title for article in articles] == [
+        "Apple raises its dividend",
+        "Apple opens a new store",
+    ]
+    # The truncation marker is removed and the description is not repeated.
+    assert articles[0].body == "Apple said it will raise the dividend. The board met on Tuesday."
+    assert articles[1].body == "The store is in Austin. Customers lined up early."
+    assert articles[0].source == "Example Wire"
+    assert articles[0].published == "2026-10-01"
+    # The key goes in a header, and the company name drops "Inc.".
+    assert calls[0]["headers"] == {"X-Api-Key": "test-key"}
+    assert calls[0]["params"]["q"] == '"Apple"'
+    assert calls[0]["params"]["searchIn"] == "title"
+
+
+def test_newsapi_searches_the_symbol_when_there_is_no_company_name():
+    calls = []
+    gather_news(
+        Run(symbol="AAPL"),
+        ticker_factory=lambda symbol: SimpleNamespace(news=[]),
+        settings=settings_with(NEWSAPI_KEY="test-key"),
+        http_get=fake_get(NEWSAPI_PAYLOAD, calls),
+    )
+    assert calls[0]["params"]["q"] == '"AAPL"'
+
+
+def slow_get(url, **kwargs):
+    raise requests.Timeout("slow")
+
+
+@pytest.mark.parametrize(
+    "get",
+    [
+        fake_get({"status": "error", "code": "rateLimited", "message": "Too many requests"}),
+        slow_get,
+    ],
+)
+def test_newsapi_problems_fall_back_to_search(get):
+    search = SimpleNamespace(news=[{"uuid": "search-1", "title": "Apple headline"}])
+
+    articles = gather_news(
+        Run(symbol="AAPL"),
+        ticker_factory=lambda symbol: SimpleNamespace(news=[]),
+        search_factory=lambda symbol: search,
+        settings=settings_with(NEWSAPI_KEY="test-key"),
+        http_get=get,
+    )
+
+    assert [article.article_id for article in articles] == ["search-1"]
+
+
+def test_newsapi_is_skipped_without_a_key():
+    search = SimpleNamespace(news=[{"uuid": "search-1", "title": "Apple headline"}])
+    articles = gather_news(
+        Run(symbol="AAPL"),
+        ticker_factory=lambda symbol: SimpleNamespace(news=[]),
+        search_factory=lambda symbol: search,
+        settings=settings_with(),
+        http_get=lambda url, **kwargs: pytest.fail("NewsAPI should not be called"),
+    )
+    assert len(articles) == 1
