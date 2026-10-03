@@ -24,6 +24,7 @@ from investment_committee.storage import (
 )
 from investment_committee.tools.earnings import EarningsDataError
 from investment_committee.tools.market import MarketDataError
+from investment_committee.tools.news import NewsDataError
 from investment_committee.workflows.routing import (
     Gatherer,
     GathererResult,
@@ -33,7 +34,7 @@ from investment_committee.workflows.routing import (
 
 # Provider errors that mean "this source has no data for the symbol", for
 # example an ETF with no income statement. Other sources can still run.
-MISSING_DATA_ERRORS = (EarningsDataError, MarketDataError)
+MISSING_DATA_ERRORS = (EarningsDataError, MarketDataError, NewsDataError)
 
 
 @dataclass(frozen=True)

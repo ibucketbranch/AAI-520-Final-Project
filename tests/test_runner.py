@@ -16,6 +16,7 @@ from investment_committee.storage import (
     save_run,
 )
 from investment_committee.tools.earnings import EarningsDataError
+from investment_committee.tools.news import NewsDataError
 from investment_committee.workflows.chaining import RawArticle
 from investment_committee.workflows.runner import run_research
 
@@ -329,3 +330,17 @@ def test_news_warning_does_not_replace_a_gatherer_error():
         gatherers={"earnings": lambda run: [], "news": no_news, "market": lambda run: []},
     )
     assert snapshot.gather_errors["news"] == "source unavailable"
+
+
+def test_news_outage_is_reported_instead_of_the_chain_warning():
+    def no_news(run):
+        raise NewsDataError(f"Yahoo returned no news for {run.symbol}.")
+
+    snapshot = run_research(
+        "AAPL",
+        database_path=None,
+        planner_provider="rules",
+        gatherers={"earnings": lambda run: [], "news": no_news, "market": lambda run: []},
+    )
+    assert snapshot.gathered["news"] == []
+    assert snapshot.gather_errors["news"] == "Yahoo returned no news for AAPL."

@@ -9,7 +9,7 @@ import pytest
 from investment_committee.models import Run
 from investment_committee.tools.earnings import EarningsDataError, gather_earnings
 from investment_committee.tools.market import MarketDataError, gather_market
-from investment_committee.tools.news import gather_news
+from investment_committee.tools.news import NewsDataError, gather_news
 
 
 def test_market_gatherer_builds_close_rsi_and_macd_evidence():
@@ -107,9 +107,48 @@ def test_news_gatherer_normalizes_current_and_legacy_records():
     ]
     ticker = SimpleNamespace(news=records)
 
-    articles = gather_news(Run(symbol="AAPL"), ticker_factory=lambda symbol: ticker)
+    articles = gather_news(
+        Run(symbol="AAPL"),
+        ticker_factory=lambda symbol: ticker,
+        search_factory=lambda symbol: pytest.fail("Search should not be called"),
+    )
 
     assert [article.article_id for article in articles] == ["current-1", "legacy-1"]
     assert [article.published for article in articles] == ["2026-09-20", "2026-09-21"]
     assert all(article.symbol == "AAPL" for article in articles)
     assert articles[0].source == "Example Wire"
+
+
+def test_news_gatherer_falls_back_to_search_headlines():
+    # Search records look like this: a headline and publisher, no summary.
+    search = SimpleNamespace(
+        news=[
+            {
+                "uuid": "search-1",
+                "title": "Apple ships a phone update",
+                "publisher": "Example Wire",
+                "providerPublishTime": int(datetime(2026, 10, 1, tzinfo=UTC).timestamp()),
+                "relatedTickers": ["AAPL", "T"],
+            },
+            {"uuid": "other-1", "title": "Microsoft news", "relatedTickers": ["MSFT"]},
+        ]
+    )
+
+    articles = gather_news(
+        Run(symbol="AAPL"),
+        ticker_factory=lambda symbol: SimpleNamespace(news=[]),
+        search_factory=lambda symbol: search,
+    )
+
+    assert [article.article_id for article in articles] == ["search-1"]
+    assert articles[0].body == "Apple ships a phone update"
+    assert articles[0].published == "2026-10-01"
+
+
+def test_news_gatherer_reports_when_yahoo_has_no_news():
+    with pytest.raises(NewsDataError, match="Yahoo returned no news for AAPL"):
+        gather_news(
+            Run(symbol="AAPL"),
+            ticker_factory=lambda symbol: SimpleNamespace(news=None),
+            search_factory=lambda symbol: SimpleNamespace(news=[]),
+        )
