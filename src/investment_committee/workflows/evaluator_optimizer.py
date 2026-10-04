@@ -355,7 +355,8 @@ def run_committee_from_storage(
     """Load a run and its pool from SQLite, deliberate, and persist.
 
     The adapter behind the mount decision: whoever calls it (the runner or
-    the UI) only needs the connection and the run_id. Claims, model calls,
+    the UI) only needs the connection and the run_id. When the run carries
+    parent_run_id, the parent's evidence pool is used (see PR #33). Claims, model calls,
     the memory note, and the finished memo are written back on the same
     connection.
 
@@ -365,7 +366,13 @@ def run_committee_from_storage(
     run = load_run(conn, run_id)
     if run is None:
         raise ValueError(f"No run with id {run_id} in the database.")
-    evidence = load_evidence(conn, run_id)
+    if run.parent_run_id:
+        # A committee run that points at a gathering run argues from the
+        # parent's pool, so the with-review and without-review arms see
+        # identical evidence and the loop is the only variable.
+        evidence = load_evidence(conn, run.parent_run_id)
+    else:
+        evidence = load_evidence(conn, run_id)
     result = run_committee(
         run,
         evidence,

@@ -13,6 +13,7 @@ from investment_committee.storage import (
     load_latest_note,
     load_run,
     open_db,
+    save_run,
     save_run_with_evidence,
 )
 from investment_committee.workflows.evaluator_optimizer import (
@@ -254,3 +255,20 @@ def test_redraft_that_repeats_kept_claims_is_deduped():
     assert len(revise_requests) == 1
     assert "do not repeat" in revise_requests[0]
     assert "Revenue grew" in revise_requests[0]
+
+
+def test_storage_adapter_follows_parent_run_evidence(tmp_path):
+    """A committee run pointing at a gathering run argues from the parent's pool."""
+    db = tmp_path / "parent.db"
+    with open_db(db) as conn:
+        gather = make_run()
+        save_run_with_evidence(conn, gather, pool(gather.run_id), [])
+        child = Run(symbol="NFLX", with_review=False, parent_run_id=gather.run_id)
+        save_run(conn, child)
+        result = run_committee_from_storage(
+            conn, child.run_id, settings_with(), provider="template"
+        )
+    assert result.claims
+    cited = {eid for claim in result.claims for eid in claim.evidence_ids}
+    assert cited == {"ev-1", "ev-2"}
+    assert result.rounds == 1
