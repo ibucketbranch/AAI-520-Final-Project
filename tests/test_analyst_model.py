@@ -234,3 +234,27 @@ def test_wrappers_forward_side_revise_and_model():
     assert client.responses.request["model"] == "my-model"
     assert "restates the headline" in client.responses.request["input"]
     assert "pessimistic" in client.responses.request["instructions"]
+
+
+def test_unparsed_response_carries_its_cost_record():
+    """A billed call whose output cannot be parsed must not vanish (Guna, PR review)."""
+    with pytest.raises(AnalystProviderError) as excinfo:
+        draft_claims_model(
+            "bull", pool(), settings_with(OPENAI_API_KEY="k"), client=FakeClient(None)
+        )
+    call = excinfo.value.model_call
+    assert call is not None
+    assert call.stage == "bull"
+    assert call.prompt_tokens == 120
+    assert call.completion_tokens == 40
+
+
+def test_wrapper_fallback_keeps_the_failed_call_record():
+    result = draft_bull_claims_model(
+        pool(), settings_with(OPENAI_API_KEY="k"), client=FakeClient(None)
+    )
+    assert result.provider_used == "template"
+    assert "returned no" in (result.fallback_reason or "")
+    assert result.model_call is not None
+    assert result.model_call.prompt_tokens == 120
+    assert [claim.side for claim in result.claims] == ["bull", "bull"]
