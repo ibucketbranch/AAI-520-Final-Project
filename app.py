@@ -62,6 +62,9 @@ def show_results(snapshot: ResearchSnapshot) -> None:
     else:
         st.caption("Planner: Rule-based")
 
+    if snapshot.memory_error is not None:
+        st.warning(f"Planned without previous memory: {snapshot.memory_error}")
+
     if snapshot.storage_error is not None:
         st.warning(f"Research completed, but SQLite could not save it: {snapshot.storage_error}")
     elif snapshot.database_path is not None:
@@ -71,7 +74,7 @@ def show_results(snapshot: ResearchSnapshot) -> None:
         )
 
     for source, message in snapshot.gather_errors.items():
-        st.warning(f"No {source} data: {message}")
+        st.warning(f"{source.title()}: {message}")
 
     plan_rows = [
         {"Step": number, "Source": task.source.title(), "Reason": task.reason}

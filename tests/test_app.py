@@ -1,5 +1,6 @@
 """Check model selection in Streamlit without calling any external service."""
 
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -94,3 +95,20 @@ def test_unavailable_default_is_not_added_to_the_provider_list(ui_services):
     assert app.selectbox(key="openai_model").options == ["gpt-6-sol"]
     assert app.selectbox(key="openai_model").value == "gpt-6-sol"
     runner.assert_not_called()
+
+
+def test_memory_warning_does_not_hide_a_successful_save(ui_services):
+    _, runner = ui_services
+    runner.return_value = replace(
+        runner.return_value,
+        memory_error="database unavailable",
+        database_path="data/committee.db",
+        saved_evidence_count=2,
+    )
+    app = AppTest.from_file(str(APP)).run()
+    app.button(key="run_research").click().run()
+    assert not app.exception
+    warnings = [item.value for item in app.warning]
+    assert "Planned without previous memory: database unavailable" in warnings
+    assert "News: News articles were not processed into evidence." in warnings
+    assert "2 evidence records" in app.success[0].value

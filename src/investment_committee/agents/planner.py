@@ -14,8 +14,8 @@ from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Literal
 
-from openai import APIError, OpenAI
-from pydantic import BaseModel, Field, field_validator
+from openai import APIError, OpenAI, OpenAIError
+from pydantic import BaseModel, Field, ValidationError, field_validator
 
 from investment_committee.config import MissingKeyError, Settings, load_settings
 from investment_committee.models import MemoryNote, ModelCall, Source
@@ -90,7 +90,9 @@ def list_planner_models(provider: PlannerProvider, settings: Settings | None = N
     current_settings = settings or load_settings()
     api_key = current_settings.require("OPENAI_API_KEY")
     try:
-        with OpenAI(api_key=api_key, timeout=10, max_retries=0) as client:
+        with OpenAI(
+            api_key=api_key, timeout=current_settings.openai_timeout(), max_retries=0
+        ) as client:
             available = {model.id for model in client.models.list()}
     except APIError as error:
         raise PlannerProviderError(
@@ -200,7 +202,7 @@ def _build_openai_plan(
     openai_client_cm = (
         nullcontext(client)
         if client is not None
-        else OpenAI(api_key=api_key, timeout=10, max_retries=0)
+        else OpenAI(api_key=api_key, timeout=settings.openai_timeout(), max_retries=0)
     )
     instructions = (
         "You are the planner for a student investment research project. "
@@ -217,7 +219,7 @@ def _build_openai_plan(
                 input=prompt,
                 text_format=PlannedTasks,
             )
-    except Exception as error:
+    except (OpenAIError, ValidationError) as error:
         raise PlannerProviderError("OpenAI could not create a research plan.") from error
 
     parsed = response.output_parsed

@@ -125,7 +125,7 @@ def test_rule_based_provider_does_not_need_a_key():
 def test_provider_failure_falls_back_to_the_rule_based_plan():
     class BrokenResponses:
         def parse(self, **request):
-            raise RuntimeError("service unavailable")
+            raise APIError("service unavailable", request=Mock(), body=None)
 
     broken_client = SimpleNamespace(responses=BrokenResponses())
     result = plan_research(
@@ -140,7 +140,8 @@ def test_provider_failure_falls_back_to_the_rule_based_plan():
     assert result.fallback_reason == "OpenAI could not create a research plan."
 
 
-def test_openai_provider_uses_budgeted_owned_client_context(monkeypatch):
+@pytest.mark.parametrize("timeout, expected", [(None, 30), ("12.5", 12.5)])
+def test_openai_provider_uses_budgeted_owned_client_context(monkeypatch, timeout, expected):
     from unittest.mock import MagicMock
 
     owned_client = MagicMock()
@@ -162,11 +163,11 @@ def test_openai_provider_uses_budgeted_owned_client_context(monkeypatch):
         "AAPL",
         run_id="new-run",
         provider="openai",
-        settings=settings_with(OPENAI_API_KEY="test-key"),
+        settings=settings_with(OPENAI_API_KEY="test-key", OPENAI_TIMEOUT=timeout),
     )
 
     assert result.provider_used == "openai"
-    openai_ctor.assert_called_once_with(api_key="test-key", timeout=10, max_retries=0)
+    openai_ctor.assert_called_once_with(api_key="test-key", timeout=expected, max_retries=0)
     owned_client.__enter__.assert_called_once()
     owned_client.__exit__.assert_called_once()
 
@@ -242,6 +243,33 @@ def test_model_list_reports_no_matching_models(model_client, names):
 def test_rule_based_model_list_needs_no_key_or_request(model_client):
     assert list_planner_models("rules", settings_with()) == []
     model_client.models.list.assert_not_called()
+
+
+def test_programming_errors_are_not_hidden_by_fallback():
+    client = FakeClient()
+    client.responses.parse = Mock(side_effect=TypeError("bad argument"))
+    with pytest.raises(TypeError, match="bad argument"):
+        plan_research("AAPL", "r1", settings=settings_with(OPENAI_API_KEY="test"), client=client)
+
+
+def test_invalid_model_output_falls_back():
+    client = FakeClient()
+
+    def invalid_response(**kwargs):
+        return PlannedTasks(tasks=[])
+
+    client.responses.parse = invalid_response
+    result = plan_research(
+        "AAPL", "r1", settings=settings_with(OPENAI_API_KEY="test"), client=client
+    )
+    assert result.provider_used == "rules"
+    assert result.fallback_reason is not None
+
+
+@pytest.mark.parametrize("value", ["0", "-1", "nan", "inf", "abc"])
+def test_invalid_timeout_is_rejected(value):
+    with pytest.raises(ValueError, match="OPENAI_TIMEOUT"):
+        settings_with(OPENAI_TIMEOUT=value).openai_timeout()
 
 
 def test_model_list_requires_a_key_and_rejects_unknown_providers(model_client):
