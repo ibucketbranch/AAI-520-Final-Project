@@ -272,3 +272,9 @@ def test_storage_adapter_follows_parent_run_evidence(tmp_path):
     cited = {eid for claim in result.claims for eid in claim.evidence_ids}
     assert cited == {"ev-1", "ev-2"}
     assert result.rounds == 1
+    # Claims belong to the deliberation, not the parent pool; stamped with
+    # the parent's run_id they would be unreadable per arm afterwards.
+    assert all(claim.run_id == child.run_id for claim in result.all_claims)
+    with open_db(db) as conn:
+        assert load_claims(conn, child.run_id)
+        assert load_claims(conn, gather.run_id) == []

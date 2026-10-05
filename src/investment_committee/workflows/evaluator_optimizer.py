@@ -237,12 +237,16 @@ def run_committee(
     all_claims: list[Claim] = []
 
     def drafted(result: DraftingResult, stage: str) -> list[Claim]:
+        # The drafting engine stamps rows with the evidence pool's run_id,
+        # which is the parent's when this run argues from a parent pool, so
+        # everything is re-stamped to this deliberation before it spreads
+        # (the evaluator and the verdict inherit run_id from the claims).
         if result.model_call is not None:
-            calls.append(result.model_call)
+            calls.append(result.model_call.model_copy(update={"run_id": run.run_id}))
         if result.fallback_reason is not None:
             fallbacks[stage] = result.fallback_reason
         dropped.extend(eid for eid in result.dropped_ids if eid not in dropped)
-        return result.claims
+        return [claim.model_copy(update={"run_id": run.run_id}) for claim in result.claims]
 
     bull = drafted(
         draft_bull_claims_model(
