@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS runs (
     with_review INTEGER NOT NULL,
     started_at  TEXT NOT NULL,
     finished_at TEXT,
-    memo        TEXT
+    memo        TEXT,
+    parent_run_id TEXT REFERENCES runs(run_id)
 );
 
 CREATE TABLE IF NOT EXISTS evidence (
@@ -96,8 +97,20 @@ def open_db(path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
-    conn.execute("PRAGMA foreign_keys = ON")
-    conn.executescript(SCHEMA)
+    try:
+        conn.execute("PRAGMA foreign_keys = ON")
+        conn.executescript(SCHEMA)
+        # Serialize the check and migration when two app sessions start together.
+        with conn:
+            conn.execute("BEGIN IMMEDIATE")
+            columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+            if "parent_run_id" not in columns:
+                conn.execute(
+                    "ALTER TABLE runs ADD COLUMN parent_run_id TEXT REFERENCES runs(run_id)"
+                )
+    except sqlite3.Error:
+        conn.close()
+        raise
     return conn
 
 
@@ -107,9 +120,17 @@ def open_db(path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
 def _insert_run(conn: sqlite3.Connection, run: Run) -> None:
     """Insert a run without controlling the surrounding transaction."""
     conn.execute(
-        "INSERT INTO runs (run_id, symbol, with_review, started_at, finished_at, memo)"
-        " VALUES (?, ?, ?, ?, ?, ?)",
-        (run.run_id, run.symbol, run.with_review, run.started_at, run.finished_at, run.memo),
+        "INSERT INTO runs (run_id, symbol, with_review, started_at, finished_at, memo, parent_run_id)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?)",
+        (
+            run.run_id,
+            run.symbol,
+            run.with_review,
+            run.started_at,
+            run.finished_at,
+            run.memo,
+            run.parent_run_id,
+        ),
     )
 
 
@@ -122,6 +143,31 @@ def _insert_evidence(conn: sqlite3.Connection, items: list[Evidence]) -> None:
     conn.executemany(
         "INSERT INTO evidence (evidence_id, run_id, symbol, source, title, content,"
         " as_of, reference) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        rows,
+    )
+
+
+def _insert_model_calls(conn: sqlite3.Connection, calls: list[ModelCall]) -> None:
+    """Insert model calls without controlling the surrounding transaction."""
+    rows = [
+        (
+            call.call_id,
+            call.run_id,
+            call.stage,
+            call.model,
+            call.prompt,
+            call.response,
+            call.prompt_tokens,
+            call.completion_tokens,
+            call.latency_ms,
+            call.created_at,
+        )
+        for call in calls
+    ]
+    conn.executemany(
+        "INSERT INTO model_calls (call_id, run_id, stage, model, prompt, response,"
+        " prompt_tokens, completion_tokens, latency_ms, created_at)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         rows,
     )
 
@@ -151,11 +197,13 @@ def save_run_with_evidence(
     conn: sqlite3.Connection,
     run: Run,
     items: list[Evidence],
+    model_calls: list[ModelCall] | None = None,
 ) -> None:
-    """Insert one run and its initial evidence as a single transaction."""
+    """Insert one run, its evidence, and model calls as one transaction."""
     with conn:
         _insert_run(conn, run)
         _insert_evidence(conn, items)
+        _insert_model_calls(conn, model_calls or [])
 
 
 def save_claim(conn: sqlite3.Connection, claim: Claim) -> None:
@@ -202,23 +250,7 @@ def save_memory_note(conn: sqlite3.Connection, note: MemoryNote) -> None:
 def save_model_call(conn: sqlite3.Connection, call: ModelCall) -> None:
     """Log one model call."""
     with conn:
-        conn.execute(
-            "INSERT INTO model_calls (call_id, run_id, stage, model, prompt, response,"
-            " prompt_tokens, completion_tokens, latency_ms, created_at)"
-            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (
-                call.call_id,
-                call.run_id,
-                call.stage,
-                call.model,
-                call.prompt,
-                call.response,
-                call.prompt_tokens,
-                call.completion_tokens,
-                call.latency_ms,
-                call.created_at,
-            ),
-        )
+        _insert_model_calls(conn, [call])
 
 
 # ---- reads ------------------------------------------------------------------

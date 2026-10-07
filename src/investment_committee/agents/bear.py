@@ -4,26 +4,35 @@ Every claim it makes carries a pointer back to the evidence item it came
 from, so the evaluator can check it. Serves the Agent Functions rubric items
 and feeds the evaluator-optimizer workflow.
 
-Stub implementation: one templated claim per evidence item, no model call.
-The signature is the contract; the Oct 6 milestone swaps the template for a
-real model behind the same function.
+Two paths: draft_bear_claims is the templated no-model fallback (one claim
+per evidence item), and draft_bear_claims_model asks the model, degrading
+to the template with a recorded fallback_reason when no key or the API
+fails, the same story as the planner.
 """
 
 from __future__ import annotations
 
+from typing import Any
+
+from investment_committee.agents.analyst import (
+    AnalystProvider,
+    DraftingResult,
+    draft_claims_with_fallback,
+)
+from investment_committee.config import Settings
 from investment_committee.models import Claim, Evidence
 
 
 def draft_bear_claims(evidence: list[Evidence]) -> list[Claim]:
-    """Draft the pessimistic case: one claim per evidence item.
+    """Draft the pessimistic case: one templated claim per evidence item.
 
     Args:
         evidence: The run's evidence pool, any mix of sources.
 
     Returns:
         Claims with side "bear", each pointing at the one evidence item it
-        restates. The stub reads the item's title as a risk; the real
-        analyst will argue, not restate.
+        restates. The template reads the item's title as a risk; the model
+        path argues instead of restating.
     """
     claims: list[Claim] = []
     for item in evidence:
@@ -36,3 +45,33 @@ def draft_bear_claims(evidence: list[Evidence]) -> list[Claim]:
             )
         )
     return claims
+
+
+def draft_bear_claims_model(
+    evidence: list[Evidence],
+    settings: Settings,
+    *,
+    provider: AnalystProvider = "openai",
+    revise: list[Claim] | None = None,
+    keep: list[Claim] | None = None,
+    revision: int = 0,
+    model: str | None = None,
+    client: Any | None = None,
+) -> DraftingResult:
+    """Draft the pessimistic case, falling back to the template when needed.
+
+    Same contract as draft_claims_with_fallback with side "bear" and the
+    template above as the degrade path.
+    """
+    return draft_claims_with_fallback(
+        "bear",
+        draft_bear_claims,
+        evidence,
+        settings,
+        provider=provider,
+        revise=revise,
+        keep=keep,
+        revision=revision,
+        model=model,
+        client=client,
+    )

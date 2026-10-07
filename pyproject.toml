@@ -13,27 +13,27 @@ authors = [
     { name = "Michael Valderrama" },
     { name = "Guna Pasupathy" },
 ]
-# Base stack the team already knows from the course. Nothing LLM-specific yet;
-# the model choice is an open question in docs/adr/0002.
+# Base stack used by the notebook, tools, and local interface.
 dependencies = [
     "yfinance==1.7.0",
     "pandas==3.0.6",
     "numpy==2.4.6",
     "requests==2.34.2",
-    "python-dotenv==1.2.3",
+    "python-dotenv==1.2.4",
     "pydantic==2.13.5",
     "tenacity==9.1.4",
     "spacy==3.8.16",
-    "streamlit==1.64.0",
+    "streamlit==1.65.0",
+    "openai==3.24.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff==0.16.8",
+    "ruff==0.16.10",
     "pre-commit==4.6.2",
     "pytest==9.1.1",
     "pytest-cov==7.1.0",
-    "mypy==2.3.1",
+    "mypy==2.4.0",
     "nbstripout==0.9.1",
     "nbformat==5.11.1",
     "jupyter==1.1.1",

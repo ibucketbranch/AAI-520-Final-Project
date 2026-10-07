@@ -8,11 +8,23 @@ from contextlib import closing
 from dataclasses import dataclass
 from pathlib import Path
 
-from investment_committee.agents.planner import ResearchPlan, build_plan, normalize_symbol
+from investment_committee.agents.planner import (
+    DEFAULT_PLANNER_PROVIDER,
+    PlannerProvider,
+    ResearchPlan,
+    normalize_symbol,
+    plan_research,
+)
 from investment_committee.models import Evidence, Run, Source
-from investment_committee.storage import DEFAULT_DB_PATH, open_db, save_run_with_evidence
+from investment_committee.storage import (
+    DEFAULT_DB_PATH,
+    load_latest_note,
+    open_db,
+    save_run_with_evidence,
+)
 from investment_committee.tools.earnings import EarningsDataError
 from investment_committee.tools.market import MarketDataError
+from investment_committee.tools.news import NewsDataError
 from investment_committee.workflows.chaining import (
     RawArticle,
     load_nlp,
@@ -28,7 +40,7 @@ from investment_committee.workflows.routing import (
 
 # Provider errors that mean "this source has no data for the symbol", for
 # example an ETF with no income statement. Other sources can still run.
-MISSING_DATA_ERRORS = (EarningsDataError, MarketDataError)
+MISSING_DATA_ERRORS = (EarningsDataError, MarketDataError, NewsDataError)
 
 
 @dataclass(frozen=True)
@@ -42,6 +54,11 @@ class ResearchSnapshot:
     database_path: str | None
     storage_error: str | None
     gather_errors: dict[Source, str]
+    planner_provider_requested: PlannerProvider
+    planner_provider_used: PlannerProvider
+    planner_fallback_reason: str | None
+    planner_model: str | None
+    memory_error: str | None = None
 
 
 def _skip_missing_data(
@@ -63,6 +80,8 @@ def run_research(
     symbol: str,
     gatherers: Mapping[Source, Gatherer] | None = None,
     database_path: str | Path | None = DEFAULT_DB_PATH,
+    planner_provider: PlannerProvider = DEFAULT_PLANNER_PROVIDER,
+    planner_model: str | None = None,
 ) -> ResearchSnapshot:
     """Plan and gather the currently implemented research stages.
 
@@ -70,6 +89,8 @@ def run_research(
         symbol: Stock symbol entered by the user.
         gatherers: Optional injected gatherers, mainly for offline tests.
         database_path: SQLite file to write, or None to skip persistence.
+        planner_provider: Planner implementation selected by the caller.
+        planner_model: Selected model, or None to use the provider's default.
 
     Returns:
         The run, its plan, results from each gatherer, and the message for
@@ -77,7 +98,22 @@ def run_research(
     """
     normalized = normalize_symbol(symbol)
     run = Run(symbol=normalized)
-    plan = build_plan(normalized)
+    previous_note = None
+    memory_error = None
+    if database_path is not None:
+        try:
+            with closing(open_db(database_path)) as conn:
+                previous_note = load_latest_note(conn, normalized)
+        except (OSError, sqlite3.Error) as error:
+            memory_error = str(error)
+    planning = plan_research(
+        normalized,
+        run.run_id,
+        provider=planner_provider,
+        model=planner_model,
+        previous_note=previous_note,
+    )
+    plan = planning.plan
     handlers = default_gatherers() if gatherers is None else gatherers
     gather_errors: dict[Source, str] = {}
     safe_handlers = {
@@ -103,13 +139,17 @@ def run_research(
             processed_news = run_chain(news_items, nlp)
             evidence.extend(processed_to_evidence(run, processed_news))
 
+    if "news" in gathered and not any(item.source == "news" for item in evidence):
+        gather_errors.setdefault("news", "News articles were not processed into evidence.")
+
     saved_path: str | None = None
     saved_count = 0
     storage_error: str | None = None
     if database_path is not None:
         try:
             with closing(open_db(database_path)) as conn:
-                save_run_with_evidence(conn, run, evidence)
+                model_calls = [planning.model_call] if planning.model_call is not None else []
+                save_run_with_evidence(conn, run, evidence, model_calls)
         except (OSError, sqlite3.Error) as error:
             storage_error = str(error)
         else:
@@ -124,4 +164,9 @@ def run_research(
         database_path=saved_path,
         storage_error=storage_error,
         gather_errors=gather_errors,
+        planner_provider_requested=planning.provider_requested,
+        planner_provider_used=planning.provider_used,
+        planner_fallback_reason=planning.fallback_reason,
+        planner_model=planning.model_call.model if planning.model_call else None,
+        memory_error=memory_error,
     )
