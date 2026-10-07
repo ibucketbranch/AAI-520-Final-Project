@@ -41,7 +41,6 @@ Every Bull and Bear claim carries a pointer to the evidence item it came from; t
 | Bear analyst | `src/investment_committee/agents/bear.py` | Pessimistic case, every claim with an evidence pointer | @ibucketbranch |
 | Evaluator | `src/investment_committee/agents/evaluator.py` | Checks supported vs unsupported claims, feeds refinement | @ibucketbranch |
 | Chaining workflow | `src/investment_committee/workflows/chaining.py` | Ingest -> preprocess -> classify -> gate -> extract -> summarize; promote accepted news to shared `Evidence` | @habibmn09 |
-| Evaluation harness | `src/investment_committee/evaluation/` | Run the same tickers with and without review; count support and prepare notebook rows | @habibmn09 |
 | Routing workflow | `src/investment_committee/workflows/routing.py` | Sends content to the right specialist | @gunaphysics |
 | Evaluator-optimizer workflow | `src/investment_committee/workflows/evaluator_optimizer.py` | Generate -> evaluate -> refine loop | @ibucketbranch |
 | Memory store | `src/investment_committee/memory/store.py` | Cross-run notes (backend pending ADR-0003) | @gunaphysics |

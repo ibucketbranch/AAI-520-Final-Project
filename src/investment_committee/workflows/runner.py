@@ -133,10 +133,11 @@ def run_research(
     ]
 
     news_items = gathered.get("news", [])
-    if news_items and all(isinstance(item, RawArticle) for item in news_items):
+    raw_news = [item for item in news_items if isinstance(item, RawArticle)]
+    if news_items and len(raw_news) == len(news_items):
         nlp = load_nlp() if gatherers is None else None
         if nlp is not None:
-            processed_news = run_chain(news_items, nlp)
+            processed_news = run_chain(raw_news, nlp)
             evidence.extend(processed_to_evidence(run, processed_news))
 
     if "news" in gathered and not any(item.source == "news" for item in evidence):
