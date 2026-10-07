@@ -7,8 +7,8 @@ library stays lightweight and testable.
 
 from investment_committee.evaluation.harness import (
     plot_support_comparison,
-    run_comparison,
     rows_for_notebook,
+    run_comparison,
 )
 from investment_committee.evaluation.metrics import ReviewMetrics, score_claims
 

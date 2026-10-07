@@ -2,8 +2,8 @@
 
 from investment_committee.evaluation.harness import (
     plot_support_comparison,
-    run_comparison,
     rows_for_notebook,
+    run_comparison,
 )
 from investment_committee.models import Claim, Evidence, Run
 

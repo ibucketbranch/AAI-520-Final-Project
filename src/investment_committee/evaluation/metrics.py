@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
+from typing import TypedDict
 
 from investment_committee.agents.evaluator import evaluate_claims
 from investment_committee.models import Claim, Evidence, Run
@@ -32,6 +33,18 @@ class ReviewMetrics:
         """Return supported / resolved claims, or 0 when nothing is resolved."""
         resolved = self.supported + self.unsupported
         return self.supported / resolved if resolved else 0.0
+
+
+class MetricsRow(TypedDict):
+    """One typed row for the notebook comparison table."""
+
+    symbol: str
+    condition: str
+    total_claims: int
+    supported: int
+    unsupported: int
+    unresolved: int
+    support_rate: float
 
 
 def score_claims(claims: Sequence[Claim]) -> tuple[int, int, int]:
@@ -77,21 +90,17 @@ def compare_conditions(
 
     baseline_run = Run(symbol=symbol, with_review=False)
     baseline_claims = draft_claims(baseline_run)
-    _, baseline_metrics = evaluate_condition(
-        symbol, baseline_claims, evidence, with_review=False
-    )
+    _, baseline_metrics = evaluate_condition(symbol, baseline_claims, evidence, with_review=False)
     results.append(baseline_metrics)
 
     reviewed_run = Run(symbol=symbol, with_review=True)
     reviewed_claims = draft_claims(reviewed_run)
-    _, reviewed_metrics = evaluate_condition(
-        symbol, reviewed_claims, evidence, with_review=True
-    )
+    _, reviewed_metrics = evaluate_condition(symbol, reviewed_claims, evidence, with_review=True)
     results.append(reviewed_metrics)
     return results
 
 
-def metrics_to_rows(metrics: Sequence[ReviewMetrics]) -> list[dict[str, object]]:
+def metrics_to_rows(metrics: Sequence[ReviewMetrics]) -> list[MetricsRow]:
     """Convert metrics to notebook-friendly rows for pandas/DataFrame use."""
     return [
         {

@@ -8,15 +8,32 @@ enabled, then return a tidy list suitable for pandas and matplotlib.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from typing import TYPE_CHECKING
 
 from investment_committee.evaluation.metrics import (
+    MetricsRow,
     ReviewMetrics,
     compare_conditions,
     metrics_to_rows,
 )
 from investment_committee.models import Claim, Evidence, Run
 
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
+
 ClaimFactory = Callable[[Run, list[Evidence]], list[Claim]]
+
+
+def _bind_evidence(
+    claim_factory: ClaimFactory, evidence: list[Evidence]
+) -> Callable[[Run], list[Claim]]:
+    """Bind one symbol's evidence without capturing the outer loop variable."""
+
+    def draft(run: Run) -> list[Claim]:
+        return claim_factory(run, evidence)
+
+    return draft
 
 
 def run_comparison(
@@ -35,17 +52,17 @@ def run_comparison(
     for symbol in symbols:
         evidence = evidence_by_symbol.get(symbol, [])
         results.extend(
-            compare_conditions(symbol, evidence, lambda run: claim_factory(run, evidence))
+            compare_conditions(symbol, evidence, _bind_evidence(claim_factory, evidence))
         )
     return results
 
 
-def rows_for_notebook(metrics: Sequence[ReviewMetrics]) -> list[dict[str, object]]:
+def rows_for_notebook(metrics: Sequence[ReviewMetrics]) -> list[MetricsRow]:
     """Return tidy rows ready for ``pd.DataFrame(rows_for_notebook(...))``."""
     return metrics_to_rows(metrics)
 
 
-def plot_support_comparison(metrics: Sequence[ReviewMetrics]):
+def plot_support_comparison(metrics: Sequence[ReviewMetrics]) -> tuple[Figure, Axes]:
     """Create a support-count chart for the final notebook.
 
     Matplotlib is imported lazily so the core evaluation package remains
@@ -55,12 +72,9 @@ def plot_support_comparison(metrics: Sequence[ReviewMetrics]):
     import matplotlib.pyplot as plt
 
     rows = rows_for_notebook(metrics)
-    labels = [
-        f"{row['symbol']}\n{row['condition']}"
-        for row in rows
-    ]
-    supported = [int(row["supported"]) for row in rows]
-    unsupported = [int(row["unsupported"]) for row in rows]
+    labels = [f"{row['symbol']}\n{row['condition']}" for row in rows]
+    supported = [row["supported"] for row in rows]
+    unsupported = [row["unsupported"] for row in rows]
 
     figure, axis = plt.subplots(figsize=(10, 5))
     positions = list(range(len(rows)))

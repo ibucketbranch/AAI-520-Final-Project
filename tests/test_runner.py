@@ -319,6 +319,44 @@ def test_news_evidence_does_not_trigger_the_chain_warning():
     assert "news" not in snapshot.gather_errors
 
 
+def test_default_news_chain_promotes_approved_articles(monkeypatch, tmp_path):
+    class EmptyEntityDoc:
+        ents = ()
+
+    def news(run):
+        return [
+            RawArticle(
+                article_id="n1",
+                symbol=run.symbol,
+                source="fixture",
+                published="2026-09-26",
+                title="Quarterly update",
+                body="Quarterly earnings and revenue increased.",
+            )
+        ]
+
+    monkeypatch.setattr(
+        "investment_committee.workflows.runner.default_gatherers",
+        lambda: {
+            "earnings": lambda run: [],
+            "news": news,
+            "market": lambda run: [],
+        },
+    )
+    monkeypatch.setattr(
+        "investment_committee.workflows.runner.load_nlp", lambda: lambda text: EmptyEntityDoc()
+    )
+
+    path = tmp_path / "committee.db"
+    snapshot = run_research("AAPL", database_path=path, planner_provider="rules")
+    with closing(open_db(path)) as conn:
+        stored_evidence = load_evidence(conn, snapshot.run.run_id)
+
+    assert [item.source for item in stored_evidence] == ["news"]
+    assert stored_evidence[0].title == "Quarterly update"
+    assert "news" not in snapshot.gather_errors
+
+
 def test_news_warning_does_not_replace_a_gatherer_error():
     def no_news(run):
         raise EarningsDataError("source unavailable")
