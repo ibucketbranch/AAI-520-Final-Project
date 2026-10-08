@@ -8,19 +8,24 @@ only changed setting is run.with_review.
 from __future__ import annotations
 
 import sqlite3
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from contextlib import closing
 from dataclasses import dataclass
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from investment_committee.agents.analyst import AnalystProvider
+from investment_committee.agents.planner import PlannerProvider
 from investment_committee.config import Settings
-from investment_committee.evaluation.metrics import RunScore
-from investment_committee.models import Run
-from investment_committee.storage import load_run, save_run
+from investment_committee.evaluation.metrics import RunScore, comparison_rows
+from investment_committee.models import Run, Source
+from investment_committee.storage import load_run, open_db, save_run
 from investment_committee.workflows.evaluator_optimizer import (
     CommitteeResult,
     run_committee_from_storage,
 )
+from investment_committee.workflows.routing import Gatherer
+from investment_committee.workflows.runner import run_research
 
 if TYPE_CHECKING:
     from matplotlib.axes import Axes
@@ -109,3 +114,68 @@ def run_review_comparison(
         with_review=results[True],
         without_review=results[False],
     )
+
+
+def run_symbol_sweep(
+    symbols: Sequence[str],
+    database_path: str | Path,
+    settings: Settings | None = None,
+    *,
+    gatherers: Mapping[Source, Gatherer] | None = None,
+    planner_provider: PlannerProvider = "openai",
+    provider: AnalystProvider = "openai",
+    max_rounds: int = 2,
+    model: str | None = None,
+    client: Any | None = None,
+) -> list[dict[str, object]]:
+    """Gather and deliberate each symbol both ways; return the full table.
+
+    One gathering run per symbol, then both review arms off it through
+    run_review_comparison, scored from storage with comparison_rows. The
+    result is the Evaluation section's table over every symbol, two rows
+    per symbol, in input order.
+
+    Args:
+        symbols: The symbols to sweep, in display order.
+        database_path: SQLite file shared by every run in the sweep.
+        settings: Loaded settings, or None to read the environment.
+        gatherers: Injected gatherers for offline tests. None takes the
+            runner's default path, the only path that engages the news
+            chain and gate.
+        planner_provider: Planner for the gathering runs.
+        provider: Analyst provider for the deliberations.
+        max_rounds: Round cap for the with-review arms.
+        model: Model override, or None for the configured default.
+        client: Injected API client, mainly for offline tests.
+
+    Returns:
+        comparison_rows output for all arms, two rows per symbol.
+    """
+    rows: list[dict[str, object]] = []
+    for symbol in symbols:
+        snapshot = run_research(
+            symbol,
+            gatherers=gatherers,
+            database_path=database_path,
+            planner_provider=planner_provider,
+        )
+        with closing(open_db(database_path)) as conn:
+            comparison = run_review_comparison(
+                conn,
+                snapshot.run.run_id,
+                settings,
+                provider=provider,
+                max_rounds=max_rounds,
+                model=model,
+                client=client,
+            )
+            rows.extend(
+                comparison_rows(
+                    conn,
+                    [
+                        comparison.with_review.run.run_id,
+                        comparison.without_review.run.run_id,
+                    ],
+                )
+            )
+    return rows
