@@ -29,8 +29,14 @@ sequenceDiagram
         Planner->>Gatherers: Request company news
         Gatherers->>NewsChain: Pass raw or saved articles
         NewsChain->>NewsChain: Ingest and preprocess
-        NewsChain->>NewsChain: Classify, extract, and summarize
-        NewsChain->>Store: Save news Evidence
+        NewsChain->>NewsChain: Classify
+        NewsChain->>NewsChain: Apply classification gate
+        NewsChain->>NewsChain: Extract entities and summarize
+        alt Classification accepted
+            NewsChain->>Store: Convert to shared Evidence and save
+        else Classification rejected
+            NewsChain-->>NewsChain: Keep in processed audit output; do not promote
+        end
     end
 
     Store-->>Analysts: Return combined evidence pool

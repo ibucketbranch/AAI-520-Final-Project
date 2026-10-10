@@ -1,6 +1,7 @@
 # Generated from pyproject.toml by make reqs. Do not edit by hand.
 yfinance==1.7.0
 pandas==3.0.6
+matplotlib==3.11.2
 numpy==2.4.6
 requests==2.34.2
 python-dotenv==1.2.4

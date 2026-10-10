@@ -100,8 +100,9 @@ def show_results(snapshot: ResearchSnapshot) -> None:
         st.dataframe(evidence_rows(market), hide_index=True, width="stretch")
 
     st.info(
-        "Raw news stays in this snapshot until the news chain converts it to evidence. "
-        "Bull/Bear analysis, review, and the final memo are not connected yet."
+        "News is processed by the classification gate before gate-approved articles are "
+        "promoted into the shared Evidence pool. Bull/Bear analysis and the final review "
+        "memo are still separate workflow stages."
     )
 
 

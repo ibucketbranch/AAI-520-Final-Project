@@ -96,3 +96,58 @@ def test_run_chain_end_to_end_on_the_fixtures(nlp):
     assert ("Apple", "ORG") in {(e.text, e.label) for e in by_id["a-001"].entities}
     assert all(p.summary for p in processed)
     assert all(ord(ch) < 128 for p in processed for ch in p.clean_text)
+
+
+def test_classification_gate_accepts_known_investment_categories_and_rejects_general():
+    from investment_committee.workflows.chaining import classification_gate
+
+    assert classification_gate("earnings")[0] is True
+    accepted, reason = classification_gate("product")
+    assert accepted is True and "accepted" in reason
+    rejected, reason = classification_gate("general")
+    assert rejected is False and "rejected" in reason
+
+
+def test_run_chain_records_gate_decision_and_stops_rejected_article(nlp):
+    articles = [
+        RawArticle(
+            article_id="general-1",
+            symbol="NFLX",
+            source="fixture",
+            published="2026-09-10",
+            title="Festival item",
+            body="The festival screening drew a quiet crowd.",
+        ),
+        RawArticle(
+            article_id="earnings-1",
+            symbol="AAPL",
+            source="fixture",
+            published="2026-09-10",
+            title="Apple reports earnings",
+            body="Apple reported quarterly earnings above expectations.",
+        ),
+    ]
+    processed = run_chain(articles, nlp)
+    rejected = processed[0]
+    accepted = processed[1]
+    assert rejected.accepted is False
+    assert rejected.entities == []
+    assert rejected.summary
+    assert accepted.accepted is True
+    assert accepted.summary
+
+
+def test_processed_news_becomes_shared_evidence(nlp):
+    from investment_committee.models import Run
+    from investment_committee.workflows.chaining import processed_to_evidence
+
+    articles = ingest(FIXTURE_PATH)
+    processed = run_chain(articles, nlp)
+    run = Run(symbol="AAPL")
+    evidence = processed_to_evidence(run, processed)
+
+    assert evidence
+    assert all(item.source == "news" for item in evidence)
+    assert all(item.run_id == run.run_id for item in evidence)
+    assert all(item.content for item in evidence)
+    assert not any(item.title.startswith("Netflix café") for item in evidence)
