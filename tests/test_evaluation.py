@@ -1,14 +1,27 @@
-"""Tests for the A/B harness and the metrics, no network calls."""
+"""Tests for the with/without-review evaluation harness."""
 
 import pytest
 from test_committee import RoutingFakeClient, make_run, one_claim, pool, settings_with
 
 from investment_committee.agents.evaluator import ClaimVerdict
-from investment_committee.evaluation.harness import run_review_comparison
+from investment_committee.evaluation.harness import (
+    plot_support_comparison,
+    run_review_comparison,
+)
 from investment_committee.evaluation.metrics import comparison_rows, score_run
-from investment_committee.models import Run
-from investment_committee.storage import load_run, open_db, save_run, save_run_with_evidence
-from investment_committee.workflows.evaluator_optimizer import CommitteeVerdict
+from investment_committee.models import Claim, Run
+from investment_committee.storage import (
+    finish_run,
+    load_run,
+    open_db,
+    save_claim,
+    save_run,
+    save_run_with_evidence,
+)
+from investment_committee.workflows.evaluator_optimizer import (
+    CommitteeVerdict,
+    run_committee_from_storage,
+)
 
 
 def seeded_conn():
@@ -95,12 +108,12 @@ def test_score_run_counts_a_rejected_draft_and_the_extra_round():
     )
     run = Run(symbol=parent.symbol, with_review=True, parent_run_id=parent.run_id)
     save_run(conn, run)
-    from investment_committee.workflows.evaluator_optimizer import run_committee_from_storage
-
-    run_committee_from_storage(conn, run.run_id, settings_with(OPENAI_API_KEY="k"), client=client)
+    result = run_committee_from_storage(
+        conn, run.run_id, settings_with(OPENAI_API_KEY="k"), client=client
+    )
     score = score_run(conn, run.run_id)
     assert score.verdict == "bear"
-    assert score.rounds == 2
+    assert score.rounds == result.rounds == 2
     assert score.claims_supported == 2
     assert score.claims_rejected == 1
 
@@ -131,3 +144,57 @@ def test_comparison_rows_build_the_notebook_table():
     assert {"rounds", "supported claims", "rejected drafts", "model calls", "tokens"} <= set(
         rows[0]
     )
+
+
+def test_score_run_uses_completed_rounds_not_highest_claim_revision():
+    """A second round can finish without producing a revision-one claim."""
+    conn = open_db(":memory:")
+    run = Run(symbol="AAPL", with_review=True)
+    save_run(conn, run)
+    save_claim(
+        conn,
+        Claim(
+            run_id=run.run_id,
+            side="bull",
+            text="A surviving first-round claim.",
+            evidence_ids=["ev-1"],
+            supported=True,
+            revision=0,
+        ),
+    )
+    finish_run(
+        conn,
+        run.run_id,
+        "Verdict: bull. Evidence held.\n"
+        "Diagnostics: 1 supported bull claim(s), 0 supported bear claim(s) "
+        "after 2 round(s); counts informed nothing.",
+        "2026-10-10T00:00:00+00:00",
+    )
+
+    assert score_run(conn, run.run_id).rounds == 2
+
+
+def test_plot_support_comparison_uses_stored_run_scores():
+    import matplotlib
+
+    matplotlib.use("Agg")
+    conn, parent = seeded_conn()
+    comparison = run_review_comparison(
+        conn, parent.run_id, settings_with(OPENAI_API_KEY="k"), client=both_arms_client()
+    )
+    scores = [
+        score_run(conn, comparison.with_review.run.run_id),
+        score_run(conn, comparison.without_review.run.run_id),
+    ]
+
+    figure, axis = plot_support_comparison(scores)
+    assert figure is not None
+    assert axis.get_ylabel() == "Claim count"
+    assert [bar.get_height() for bar in axis.containers[0]] == [
+        score.claims_supported for score in scores
+    ]
+    assert [bar.get_height() for bar in axis.containers[1]] == [
+        score.claims_rejected for score in scores
+    ]
+    assert axis.containers[1].get_label() == "Rejected drafts"
+    figure.clf()

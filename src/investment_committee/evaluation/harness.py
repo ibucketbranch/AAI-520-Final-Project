@@ -1,25 +1,30 @@
 """A/B harness: one evidence pool argued with and without the review loop.
 
-Serves the Evaluation and Iteration notebook section. One gathering run is
-the parent; the harness creates two committee runs pointing at it through
-parent_run_id, so both arms argue from the identical pool and differ by
-exactly one variable, run.with_review.
+One gathering run is the parent. The harness creates two committee runs that
+point to it through parent_run_id, so both arms use the same evidence and the
+only changed setting is run.with_review.
 """
 
 from __future__ import annotations
 
 import sqlite3
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from investment_committee.agents.analyst import AnalystProvider
 from investment_committee.config import Settings
+from investment_committee.evaluation.metrics import RunScore
 from investment_committee.models import Run
 from investment_committee.storage import load_run, save_run
 from investment_committee.workflows.evaluator_optimizer import (
     CommitteeResult,
     run_committee_from_storage,
 )
+
+if TYPE_CHECKING:
+    from matplotlib.axes import Axes
+    from matplotlib.figure import Figure
 
 
 @dataclass(frozen=True)
@@ -29,6 +34,30 @@ class ReviewComparison:
     parent_run_id: str
     with_review: CommitteeResult
     without_review: CommitteeResult
+
+
+def plot_support_comparison(scores: Sequence[RunScore]) -> tuple[Figure, Axes]:
+    """Plot supported claims and rejected drafts from stored committee runs."""
+    import matplotlib.pyplot as plt
+
+    labels = [
+        f"{score.symbol}\n{'with review' if score.with_review else 'without review'}"
+        for score in scores
+    ]
+    supported = [score.claims_supported for score in scores]
+    rejected = [score.claims_rejected for score in scores]
+
+    figure, axis = plt.subplots(figsize=(10, 5))
+    positions = list(range(len(scores)))
+    width = 0.38
+    axis.bar([p - width / 2 for p in positions], supported, width, label="Supported")
+    axis.bar([p + width / 2 for p in positions], rejected, width, label="Rejected drafts")
+    axis.set_xticks(positions, labels)
+    axis.set_ylabel("Claim count")
+    axis.set_title("Claim support with and without review")
+    axis.legend()
+    figure.tight_layout()
+    return figure, axis
 
 
 def run_review_comparison(

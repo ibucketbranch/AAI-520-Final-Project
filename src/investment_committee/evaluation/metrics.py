@@ -1,8 +1,7 @@
 """Metrics for the final notebook's results table.
 
-Reads finished runs back from storage and turns them into numbers the
-Evaluation and Iteration section can compare: verdicts, rounds, supported
-claims, rejected drafts, and what each arm cost in calls and tokens.
+Reads finished runs back from storage and reports verdicts, rounds, supported
+claims, rejected drafts, model calls, and token use.
 """
 
 from __future__ import annotations
@@ -63,7 +62,7 @@ def score_run(conn: sqlite3.Connection, run_id: str) -> RunScore:
         symbol=run.symbol,
         with_review=run.with_review,
         verdict=_verdict_from_memo(run_id, run.memo),
-        rounds=max((claim.revision for claim in claims), default=-1) + 1,
+        rounds=_rounds_from_memo(run_id, run.memo),
         claims_supported=sum(1 for claim in claims if claim.supported),
         claims_rejected=sum(1 for claim in claims if claim.supported is False),
         model_calls=len(calls),
@@ -110,3 +109,14 @@ def _verdict_from_memo(run_id: str, memo: str) -> str:
             "it was not written by the committee"
         )
     return first_line[len(_MEMO_PREFIX) :].split(".", 1)[0]
+
+
+def _rounds_from_memo(run_id: str, memo: str) -> int:
+    """Read the round count from the memo's diagnostics line."""
+    for line in memo.splitlines():
+        if not line.startswith("Diagnostics:") or " after " not in line:
+            continue
+        value = line.split(" after ", 1)[1].split(" ", 1)[0]
+        if value.isdigit():
+            return int(value)
+    raise ValueError(f"run {run_id!r} has no round count in its memo")
