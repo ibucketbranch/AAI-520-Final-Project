@@ -13,8 +13,8 @@ Usage:
         keep the same saved outputs.
 
 Section 8 (conclusions) depends on the results, so it is written by hand in
-the executed notebook after the final run. "build" keeps that text when it
-rebuilds, so it is not erased.
+the executed notebook after the final run, and so is section 9 (each
+author's AI disclosure). "build" keeps both when it rebuilds.
 """
 
 import argparse
@@ -38,19 +38,35 @@ def full_only_cell(text):
     return cell
 
 
-def saved_conclusions():
-    """Return the hand-written section 8 from the current full notebook, if there is one."""
+# Sections we write by hand in the notebook itself. A rebuild keeps them.
+CONCLUSIONS = "## 8. Conclusions"
+DISCLOSURES = "## 9. AI tool disclosures"
+
+
+def _hand_written(notebook):
+    """Return {heading: text} for the hand-written sections of a notebook."""
+    sections = {}
+    for cell in notebook.cells:
+        if cell.cell_type != "markdown":
+            continue
+        for heading in (CONCLUSIONS, DISCLOSURES):
+            if cell.source.startswith(heading):
+                sections[heading] = cell.source
+    return sections
+
+
+def saved_sections():
+    """Return the hand-written sections from the current full notebook that differ from the defaults."""
     if not FULL_PATH.exists():
-        return None
-    for cell in nbformat.read(FULL_PATH, as_version=4).cells:
-        text = cell.source
-        if cell.cell_type == "markdown" and text.startswith("## 8. Conclusions"):
-            return None if "TODO(team)" in text else text
-    return None
+        return {}
+    defaults = _hand_written(build(FULL))
+    current = _hand_written(nbformat.read(FULL_PATH, as_version=4))
+    return {heading: text for heading, text in current.items() if text != defaults.get(heading)}
 
 
-def build(kind, conclusions=None):
+def build(kind, kept=None):
     """Return the full or light notebook, with no outputs."""
+    kept = kept or {}
     cells = []
 
     def md(text):
@@ -130,7 +146,9 @@ The committee has one job: give a short, evidence-backed opinion on a stock, and
                                                           Verdict + memo
                                                              |
                                                       memory note saved
+
 ```
+*ChatGPT was used for formatting this text diagram*
 
 **The agents**
 
@@ -1063,8 +1081,8 @@ print(SCHEMA)
         cells[-1].metadata["tags"] = ["full-only"]
 
     # ----------------------------------------------------------- 8, 9, refs
-    if conclusions:
-        md(conclusions)
+    if CONCLUSIONS in kept:
+        md(kept[CONCLUSIONS])
     else:
         md("""
 ## 8. Conclusions
@@ -1076,7 +1094,10 @@ TODO(team): write after the final run, using the numbers in section 7.
 - **With more time:** check claims with an NLI model, use a judge from a different model family than the analysts, and add SEC filings for the earnings analyst (the stretch items in `docs/ARCHITECTURE.md`).
 """)
 
-    md("""
+    if DISCLOSURES in kept:
+        md(kept[DISCLOSURES])
+    else:
+        md("""
 ## 9. AI tool disclosures
 
 Each of us writes our own paragraph in the first person, following `docs/AI_DISCLOSURE.md`: which tools we used, what they did, what we changed or checked, and that the work reflects our own understanding.
@@ -1143,10 +1164,10 @@ def main():
     parser.add_argument("step", choices=["build", "light-from-full"])
     args = parser.parse_args()
     if args.step == "build":
-        # Keep the hand-written conclusions, so a rebuild does not erase them.
-        conclusions = saved_conclusions()
-        nbformat.write(build(FULL, conclusions), FULL_PATH)
-        nbformat.write(build(LIGHT, conclusions), LIGHT_PATH)
+        # Keep the hand-written sections, so a rebuild does not erase them.
+        kept = saved_sections()
+        nbformat.write(build(FULL, kept), FULL_PATH)
+        nbformat.write(build(LIGHT, kept), LIGHT_PATH)
     else:
         light_from_full(FULL_PATH, LIGHT_PATH)
     print("done:", args.step)
