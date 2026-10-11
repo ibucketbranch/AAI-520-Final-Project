@@ -1,6 +1,6 @@
 # Notebooks
 
-**Overview:** logic lives in `src/`, notebooks import it. Install the package first (`make setup`, or `pip install -e .` in Colab).
+**Overview:** logic lives in `src/`, notebooks import it. Install the package first (`make setup`, or `pip install -e .` in Colab). The news chain also needs spaCy's English model: `make setup` downloads it, or run `python -m spacy download en_core_web_sm`.
 
 ## Rules
 

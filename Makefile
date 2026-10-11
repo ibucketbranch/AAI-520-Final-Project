@@ -7,6 +7,7 @@ setup:            ## create the venv, install the package and hooks
 	$(PYTHON) -m venv .venv
 	.venv/bin/pip install --upgrade pip
 	.venv/bin/pip install -e ".[dev]"
+	.venv/bin/python -m spacy download en_core_web_sm
 	.venv/bin/pre-commit install
 
 lint:             ## report problems, change nothing

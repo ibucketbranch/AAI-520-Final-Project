@@ -116,7 +116,7 @@ Per-person deliverables in [docs/MILESTONES.md](docs/MILESTONES.md).
 ```bash
 git clone git@github.com:ibucketbranch/AAI-520-Final-Project.git
 cd AAI-520-Final-Project
-make setup                 # venv, editable install, pre-commit hooks
+make setup                 # venv, editable install, spaCy model, pre-commit hooks
 cp .env.example .env       # add the keys you have
 make check                 # everything CI runs
 make run                   # CLI help
