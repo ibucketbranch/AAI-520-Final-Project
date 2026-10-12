@@ -935,7 +935,11 @@ First the same experiment with the scripted client from section 5, so the differ
 """)
 
     code("""
-from investment_committee.evaluation.harness import plot_support_comparison, run_review_comparison
+from investment_committee.evaluation.harness import (
+    plot_support_comparison,
+    run_review_comparison,
+    run_symbol_sweep,
+)
 from investment_committee.evaluation.metrics import comparison_rows, score_run
 from investment_committee.storage import save_run_with_evidence
 
@@ -979,74 +983,48 @@ With review, the Bear claim was rewritten and both sides reached the chair, so t
 ### 7.2 The live comparison
 
 **What we measure** for each run:
-- **Final supported claims:** how many supported claims reach the verdict. The chair only reads supported claims, so this is how much grounded argument the decision is based on.
-- **Final supported share:** of the claims in the final slate, how many does the evidence support?
-- Rounds and model calls: what the loop costs.
+- **Supported claims:** how many grounded claims the evaluator saved for the chair.
+- **Rejected drafts:** how many drafts were sent back or left out of the verdict.
+- Rounds, model calls, and tokens: what the loop costs.
 - Verdict: did the loop change the decision?
 """)
 
     code("""
 EVAL_SYMBOLS = ["AAPL", "NVDA", "JPM"]
 
-# Step 1: gather evidence once per stock (AAPL reuses the run from section 2.4).
-parents = {SYMBOL: MAIN_RUN}
-for symbol in EVAL_SYMBOLS:
-    if symbol not in parents:
-        gathered_run = run_research(symbol, gatherers=TOOLS,
-                                    database_path=DB_PATH, planner_provider="rules")
-        parents[symbol] = gathered_run.run.run_id
-
-# Step 2: run the committee twice on each saved pool, with and without review.
-comparisons = []
-with closing(open_db(DB_PATH)) as conn:
-    for symbol in EVAL_SYMBOLS:
-        comparison = run_review_comparison(conn, parents[symbol], settings, provider=PROVIDER)
-        comparisons.append(comparison)
-        print(f"{symbol}: done")
-""")
-
-    code("""
-rows = []
-for comparison in comparisons:
-    for result in (comparison.with_review, comparison.without_review):
-        final = result.claims
-        supported = sum(1 for claim in final if claim.supported)
-        rows.append({
-            "symbol": result.run.symbol,
-            "review loop": "on" if result.run.with_review else "off",
-            "final claims": len(final),
-            "final supported": supported,
-            "final supported share": round(supported / len(final), 2) if final else 0.0,
-            "rounds": result.rounds,
-            "model calls": len(result.model_calls),
-            "verdict": result.verdict,
-        })
-final_table = table(rows)
+# Michael's sweep helper gathers each stock once, runs both review arms from
+# that saved evidence, and reads the scorecard back from SQLite.
+sweep_rows = run_symbol_sweep(
+    EVAL_SYMBOLS,
+    DB_PATH,
+    settings,
+    gatherers=None if LIVE else TOOLS,
+    planner_provider="rules",
+    provider=PROVIDER,
+)
+sweep_table = table(sweep_rows)
 if PROVIDER == "template":
     print("Rule-based run: the template analysts cite one real item per claim, so every claim")
     print("passes and both arms look the same. The comparison needs the model run.")
-final_table
+sweep_table.drop(columns=["run id"])
 """)
 
     code("""
-columns = ["final supported", "final supported share", "model calls", "rounds"]
-summary = final_table.groupby("review loop")[columns].mean()
+columns = ["supported claims", "rejected drafts", "model calls", "rounds"]
+summary = sweep_table.groupby("review loop")[columns].mean()
 summary.round(2)
 """)
 
     md("""
-**The stored scorecard.** The same runs, read back from SQLite with `comparison_rows`. Here "supported claims" and "rejected drafts" count every draft the evaluator judged, including drafts the loop later replaced, so they show how much work the loop did.
+**The stored scorecard.** `run_symbol_sweep` already returns `comparison_rows` from SQLite. Here "supported claims" and "rejected drafts" count every draft the evaluator judged, including drafts the loop later replaced, so they show how much work the loop did.
 """)
 
     code("""
-run_ids = []
-for comparison in comparisons:
-    run_ids += [comparison.with_review.run.run_id, comparison.without_review.run.run_id]
+run_ids = [row["run id"] for row in sweep_rows]
 
 with closing(open_db(DB_PATH)) as conn:
-    stored = table(comparison_rows(conn, run_ids))
     scores = [score_run(conn, run_id) for run_id in run_ids]
-display(stored)
+display(sweep_table)
 
 figure, axis = plot_support_comparison(scores)
 """)
@@ -1059,7 +1037,13 @@ figure, axis = plot_support_comparison(scores)
 
     source(
         "The experiment harness and the stored scorecard.",
-        ["run_review_comparison", "score_run", "comparison_rows", "plot_support_comparison"],
+        [
+            "run_review_comparison",
+            "run_symbol_sweep",
+            "score_run",
+            "comparison_rows",
+            "plot_support_comparison",
+        ],
     )
 
     # ----------------------------------------------------------- appendix (full only)
