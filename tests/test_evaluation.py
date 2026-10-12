@@ -9,7 +9,7 @@ from investment_committee.evaluation.harness import (
     run_review_comparison,
 )
 from investment_committee.evaluation.metrics import comparison_rows, score_run
-from investment_committee.models import Claim, Run
+from investment_committee.models import Claim, Evidence, Run
 from investment_committee.storage import (
     finish_run,
     load_run,
@@ -198,3 +198,58 @@ def test_plot_support_comparison_uses_stored_run_scores():
     ]
     assert axis.containers[1].get_label() == "Rejected drafts"
     figure.clf()
+
+
+def test_symbol_sweep_builds_two_rows_per_symbol(tmp_path):
+    """Damage prevented: the sweep table mixing up symbols or arms."""
+    from investment_committee.evaluation.harness import run_symbol_sweep
+
+    def market_gather(run):
+        return [
+            Evidence(
+                evidence_id=f"ev-{run.symbol}-1",
+                run_id=run.run_id,
+                symbol=run.symbol,
+                source="market",
+                title=f"{run.symbol} indicator",
+                content=f"A market indicator for {run.symbol}.",
+                as_of="2026-10-08",
+                reference=f"fixture-{run.symbol}",
+            )
+        ]
+
+    client = RoutingFakeClient(
+        drafts=[
+            one_claim("ev-NFLX-1", text="Bull argument"),
+            one_claim("ev-NFLX-1", text="Bear argument"),
+            one_claim("ev-NFLX-1", text="Bull argument"),
+            one_claim("ev-NFLX-1", text="Bear argument"),
+            one_claim("ev-AMD-1", text="Bull argument"),
+            one_claim("ev-AMD-1", text="Bear argument"),
+            one_claim("ev-AMD-1", text="Bull argument"),
+            one_claim("ev-AMD-1", text="Bear argument"),
+        ],
+        verdicts=[ClaimVerdict(supported=True, reason="matches the source")] * 8,
+        decisions=[
+            CommitteeVerdict(side="bull", reason="the upside case held"),
+            CommitteeVerdict(side="none", reason="balanced without review"),
+            CommitteeVerdict(side="bear", reason="the risk case held"),
+            CommitteeVerdict(side="bear", reason="still the risk case"),
+        ],
+    )
+    rows = run_symbol_sweep(
+        ["NFLX", "AMD"],
+        tmp_path / "sweep.db",
+        settings_with(OPENAI_API_KEY="k"),
+        gatherers={
+            "earnings": lambda run: [],
+            "news": lambda run: [],
+            "market": market_gather,
+        },
+        planner_provider="rules",
+        client=client,
+    )
+    assert len(rows) == 4
+    assert [row["review loop"] for row in rows] == ["on", "off", "on", "off"]
+    assert [row["verdict"] for row in rows] == ["bull", "none", "bear", "bear"]
+    assert [row["symbol"] for row in rows] == ["NFLX", "NFLX", "AMD", "AMD"]
