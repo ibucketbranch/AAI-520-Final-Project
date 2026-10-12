@@ -357,6 +357,41 @@ def test_default_news_chain_promotes_approved_articles(monkeypatch, tmp_path):
     assert "news" not in snapshot.gather_errors
 
 
+def test_missing_spacy_model_is_reported_instead_of_crashing(monkeypatch, tmp_path):
+    def news(run):
+        return [
+            RawArticle(
+                article_id="n1",
+                symbol=run.symbol,
+                source="fixture",
+                published="2026-09-26",
+                title="Quarterly update",
+                body="Quarterly earnings and revenue increased.",
+            )
+        ]
+
+    def no_model():
+        raise RuntimeError("spaCy model en_core_web_sm is not installed.")
+
+    monkeypatch.setattr(
+        "investment_committee.workflows.runner.default_gatherers",
+        lambda: {
+            "earnings": lambda run: [],
+            "news": news,
+            "market": lambda run: [_evidence(run, "market")],
+        },
+    )
+    monkeypatch.setattr("investment_committee.workflows.runner.load_nlp", no_model)
+
+    snapshot = run_research(
+        "AAPL", database_path=tmp_path / "committee.db", planner_provider="rules"
+    )
+
+    assert snapshot.gather_errors["news"] == "spaCy model en_core_web_sm is not installed."
+    assert snapshot.saved_evidence_count == 1
+    assert snapshot.storage_error is None
+
+
 def test_news_warning_does_not_replace_a_gatherer_error():
     def no_news(run):
         raise EarningsDataError("source unavailable")

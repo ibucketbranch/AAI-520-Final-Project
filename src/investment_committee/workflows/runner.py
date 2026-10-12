@@ -134,9 +134,14 @@ def run_research(
 
     news_items = gathered.get("news", [])
     raw_news = [item for item in news_items if isinstance(item, RawArticle)]
-    if news_items and len(raw_news) == len(news_items):
-        nlp = load_nlp() if gatherers is None else None
-        if nlp is not None:
+    if news_items and len(raw_news) == len(news_items) and gatherers is None:
+        # A missing spaCy model should not stop the run; earnings and market
+        # evidence are still saved and the snapshot says why news is missing.
+        try:
+            nlp = load_nlp()
+        except RuntimeError as error:
+            gather_errors["news"] = str(error)
+        else:
             processed_news = run_chain(raw_news, nlp)
             evidence.extend(processed_to_evidence(run, processed_news))
 
