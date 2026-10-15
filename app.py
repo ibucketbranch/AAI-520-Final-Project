@@ -15,6 +15,7 @@ from investment_committee.config import MissingKeyError, load_settings
 from investment_committee.models import Evidence
 from investment_committee.workflows.chaining import RawArticle
 from investment_committee.workflows.runner import ResearchSnapshot, run_research
+from ui_committee import live_view, replay_view
 
 
 @st.cache_data(ttl=300, show_spinner=False)
@@ -108,6 +109,17 @@ def show_results(snapshot: ResearchSnapshot) -> None:
 
 st.set_page_config(page_title="AI Investment Committee", page_icon=None, layout="wide")
 st.title("AI Investment Committee")
+
+# The committee views live in ui_committee.py. Research stays the first view,
+# and st.stop() ends the run so the research form below is not drawn under them.
+view = st.sidebar.radio("View", ["Research", "Committee replay", "Live committee"], key="view")
+if view == "Committee replay":
+    replay_view()
+    st.stop()
+if view == "Live committee":
+    live_view()
+    st.stop()
+
 st.caption("Planner and live research gatherers")
 
 with st.container(border=True):

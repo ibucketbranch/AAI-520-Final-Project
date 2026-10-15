@@ -1,0 +1,453 @@
+"""Committee replay and live committee views for the Streamlit app.
+
+The research view in app.py stops after the planner and the three data
+tools. These two views show what happens next: Bull and Bear draft claims,
+the evaluator judges each claim against the evidence it cites, rejected
+claims go back for a rewrite (review loop on) or are dropped (review loop
+off), and the chair reads only the supported claims to pick a verdict.
+
+Replay reads saved runs from a SQLite file in data/ and costs nothing.
+Live runs the real pipeline and makes paid model calls, so it needs a key
+and a second click.
+"""
+
+from __future__ import annotations
+
+import sqlite3
+import time
+from collections.abc import Callable
+from contextlib import closing
+from dataclasses import dataclass
+from datetime import datetime
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import pandas as pd
+import streamlit as st
+
+from investment_committee.config import load_settings
+from investment_committee.evaluation.harness import plot_support_comparison, run_review_comparison
+from investment_committee.evaluation.metrics import RunScore, comparison_rows, score_run
+from investment_committee.models import Claim, Evidence, Run
+from investment_committee.storage import load_claims, load_evidence, load_run, open_db
+from investment_committee.workflows.runner import run_research
+
+DATA_DIR = Path("data")
+VERDICT_COLORS = {"bull": "green", "bear": "red", "none": "gray"}
+SOURCES = ("earnings", "news", "market")
+
+
+@dataclass(frozen=True)
+class GatheringRun:
+    """A gathering run plus the committee runs that argued from its evidence."""
+
+    run: Run
+    with_review: Run | None
+    without_review: Run | None
+
+    @property
+    def label(self) -> str:
+        """Text for the run picker: symbol, local start time, and which setups exist."""
+        setups = []
+        if self.with_review is not None:
+            setups.append("review on")
+        if self.without_review is not None:
+            setups.append("review off")
+        return f"{self.run.symbol} | {local_time(self.run.started_at)} | {' + '.join(setups)}"
+
+
+# ---- reading saved runs ------------------------------------------------------
+
+
+def list_databases(folder: Path = DATA_DIR) -> list[Path]:
+    """Return the SQLite files in the data folder, newest first."""
+    if not folder.is_dir():
+        return []
+    return sorted(folder.glob("*.db"), key=lambda path: path.stat().st_mtime, reverse=True)
+
+
+def open_readonly(path: Path) -> sqlite3.Connection:
+    """Open a saved database without changing it.
+
+    storage.open_db() creates tables and can migrate an old file, which is
+    right for a run but wrong for a replay of someone's saved results. The
+    storage load_* functions only need a connection that returns rows by
+    name, so this read-only one works with them.
+    """
+    conn = sqlite3.connect(f"file:{path.resolve()}?mode=ro", uri=True)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def local_time(iso_text: str) -> str:
+    """Show a stored UTC timestamp in this computer's time zone."""
+    try:
+        return datetime.fromisoformat(iso_text).astimezone().strftime("%b %d %H:%M")
+    except ValueError:
+        return iso_text
+
+
+def gathering_runs(conn: sqlite3.Connection) -> list[GatheringRun]:
+    """Find the gathering runs that have at least one finished committee run.
+
+    A committee run is a row in runs whose parent_run_id points at the
+    gathering run whose evidence it argued from. storage.py has no
+    "list runs" function and src/ is frozen until after submission, so the
+    run ids come from one small read-only query here; every record is then
+    loaded through storage.load_run.
+    """
+    columns = {row["name"] for row in conn.execute("PRAGMA table_info(runs)")}
+    if "parent_run_id" not in columns:
+        return []
+    rows = conn.execute(
+        "SELECT run_id FROM runs WHERE parent_run_id IS NOT NULL AND memo IS NOT NULL"
+        " ORDER BY started_at"
+    ).fetchall()
+    committee_runs = [run for row in rows if (run := load_run(conn, row["run_id"])) is not None]
+
+    # Latest committee run of each setup wins if a parent was argued more than once.
+    by_parent: dict[str, dict[bool, Run]] = {}
+    for run in committee_runs:
+        if run.parent_run_id is not None and run.memo and run.memo.startswith("Verdict: "):
+            by_parent.setdefault(run.parent_run_id, {})[run.with_review] = run
+
+    found = []
+    for parent_id, setups in by_parent.items():
+        parent = load_run(conn, parent_id)
+        if parent is not None:
+            found.append(GatheringRun(parent, setups.get(True), setups.get(False)))
+    return sorted(found, key=lambda item: item.run.started_at, reverse=True)
+
+
+def verdict_reason(memo: str) -> str:
+    """Return the chair's one-sentence reason from the memo's first line."""
+    first_line = memo.splitlines()[0]
+    return first_line.split(". ", 1)[1] if ". " in first_line else ""
+
+
+def claims_by_round(claims: list[Claim]) -> list[list[Claim]]:
+    """Group stored claims into review rounds.
+
+    A first draft has revision 0 and is judged in round 1; a rewrite made
+    after round 1 has revision 1 and is judged in round 2, and so on.
+    """
+    if not claims:
+        return []
+    last = max(claim.revision for claim in claims)
+    return [[claim for claim in claims if claim.revision == number] for number in range(last + 1)]
+
+
+# ---- drawing claims ------------------------------------------------------------
+
+
+def as_text(value: str) -> str:
+    """Escape dollar signs so Streamlit shows "$109.42" as money, not math."""
+    return value.replace("$", "\\$")
+
+
+def cited_titles(claim: Claim, evidence_by_id: dict[str, Evidence]) -> str:
+    """Name the evidence a claim cites, by title and source."""
+    names = []
+    for evidence_id in claim.evidence_ids:
+        item = evidence_by_id.get(evidence_id)
+        names.append(f"{item.title} ({item.source})" if item else evidence_id)
+    return as_text("; ".join(names))
+
+
+def show_claim_text(claim: Claim, evidence_by_id: dict[str, Evidence]) -> None:
+    """Write one claim and the evidence it cites, before it is judged."""
+    st.markdown(as_text(claim.text))
+    st.caption(f"Cites: {cited_titles(claim, evidence_by_id)}")
+
+
+def show_judgment(claim: Claim, after_reject: str) -> None:
+    """Write the evaluator's badge and reason under a claim."""
+    if claim.supported:
+        st.badge("Supported", icon=":material/check:", color="green")
+    else:
+        st.badge("Rejected", icon=":material/close:", color="red")
+    if claim.reason:
+        st.caption(f"Evaluator: {as_text(claim.reason)}")
+    if not claim.supported:
+        st.caption(after_reject)
+
+
+def play_round(
+    claims: list[Claim],
+    evidence_by_id: dict[str, Evidence],
+    after_reject: str,
+    pause: float,
+    tick: Callable[[], None],
+) -> None:
+    """Show one round: Bull and Bear claims side by side, judged one at a time."""
+    bull_column, bear_column = st.columns(2)
+    bull_column.markdown("**Bull**")
+    bear_column.markdown("**Bear**")
+    for claim in claims:
+        column = bull_column if claim.side == "bull" else bear_column
+        with column.container(border=True):
+            show_claim_text(claim, evidence_by_id)
+            judgment = st.empty()
+        time.sleep(pause)
+        with judgment.container():
+            show_judgment(claim, after_reject)
+        tick()
+
+
+def show_verdict(run: Run, claims: list[Claim], evidence_by_id: dict[str, Evidence]) -> None:
+    """Show the verdict card: the side, the chair's reason, and what it read."""
+    memo = run.memo or "Verdict: none."
+    side = memo.splitlines()[0].removeprefix("Verdict: ").split(".", 1)[0]
+    read_by_chair = final_supported(claims)
+    with st.container(border=True):
+        st.markdown(f"### Verdict: :{VERDICT_COLORS.get(side, 'gray')}[{side.upper()}]")
+        st.markdown(as_text(verdict_reason(memo)))
+        st.caption(
+            "The chair reads only the supported claims. Rejected claims never reach the verdict."
+        )
+        with st.expander(f"What the chair read ({len(read_by_chair)} supported claims)"):
+            for claim in read_by_chair:
+                st.markdown(f"- **{claim.side.title()}:** {as_text(claim.text)}")
+                st.caption(f"Cites: {cited_titles(claim, evidence_by_id)}")
+
+
+def final_supported(claims: list[Claim]) -> list[Claim]:
+    """Return the claims that were supported when the loop stopped.
+
+    Rejected claims are left out on both setups: dropped when the review
+    loop is off, replaced by their rewrites when it is on.
+    """
+    return [claim for claim in claims if claim.supported]
+
+
+# ---- replay ----------------------------------------------------------------------
+
+
+def show_evidence_pool(evidence: list[Evidence]) -> None:
+    """Show the evidence pool grouped by source."""
+    counts = {source: sum(1 for item in evidence if item.source == source) for source in SOURCES}
+    for column, source in zip(st.columns(3), SOURCES, strict=True):
+        column.metric(source.title(), counts[source])
+    for source in SOURCES:
+        items = [item for item in evidence if item.source == source]
+        if not items:
+            continue
+        with st.expander(f"{source.title()} evidence ({len(items)})"):
+            rows = [
+                {"Finding": item.title, "Details": item.content, "As of": item.as_of}
+                for item in items
+            ]
+            st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+
+
+def play_review_loop(
+    run: Run, claims: list[Claim], evidence_by_id: dict[str, Evidence], pause: float
+) -> None:
+    """Animate the review-on setup round by round, then show its verdict."""
+    rounds = claims_by_round(claims)
+    total_steps = len(claims) + 1
+    progress = st.progress(0, text="Starting the review loop")
+    done = 0
+
+    def tick() -> None:
+        nonlocal done
+        done += 1
+        progress.progress(min(done / total_steps, 1.0), text=f"Step {done} of {total_steps}")
+
+    for number, round_claims in enumerate(rounds, start=1):
+        last_round = number == len(rounds)
+        title = "first drafts" if number == 1 else "rewrites of the rejected claims"
+        with st.status(f"Round {number}: {title}", expanded=True) as status:
+            if number > 1:
+                kept = [claim for claim in rounds[0] if claim.supported]
+                if kept:
+                    st.caption(f"Kept from round 1 without changes: {len(kept)} supported claims.")
+            after_reject = (
+                "Stopped here: the round limit was reached."
+                if last_round
+                else "Sent back to its analyst with this reason."
+            )
+            play_round(round_claims, evidence_by_id, after_reject, pause, tick)
+            rejected = [claim for claim in round_claims if not claim.supported]
+            label = f"Round {number}: {len(round_claims) - len(rejected)} supported, {len(rejected)} rejected"
+            status.update(label=label, state="complete", expanded=True)
+        if rejected and not last_round:
+            bull_back = sum(1 for claim in rejected if claim.side == "bull")
+            bear_back = len(rejected) - bull_back
+            st.info(f"Sent back for rewrites: Bull {bull_back}, Bear {bear_back}.")
+            time.sleep(pause)
+    if len(rounds) == 1:
+        st.info("Nothing was rejected in round 1, so nothing went back for a rewrite.")
+
+    time.sleep(pause)
+    show_verdict(run, claims, evidence_by_id)
+    tick()
+    progress.progress(1.0, text="Done")
+
+
+def show_no_review_setup(
+    run: Run, claims: list[Claim], evidence_by_id: dict[str, Evidence]
+) -> None:
+    """Show the review-off setup: one round, rejected claims dropped."""
+    st.caption("Same evidence, one round. Rejected claims are dropped, not rewritten.")
+    play_round(
+        claims, evidence_by_id, "Dropped: the review loop is off.", pause=0.0, tick=lambda: None
+    )
+    show_verdict(run, claims, evidence_by_id)
+
+
+def show_comparison(conn: sqlite3.Connection, with_review: Run, without_review: Run) -> None:
+    """Show the side-by-side table and chart for the two setups."""
+    run_ids = [with_review.run_id, without_review.run_id]
+    st.dataframe(pd.DataFrame(comparison_rows(conn, run_ids)), hide_index=True, width="stretch")
+    scores: list[RunScore] = [score_run(conn, run_id) for run_id in run_ids]
+    figure, _ = plot_support_comparison(scores)
+    st.pyplot(figure)
+    plt.close(figure)
+    st.caption(
+        "Rejected drafts counts every claim the evaluator turned down at any point, so on "
+        "the review-on setup it includes drafts that were later rewritten."
+    )
+
+
+def show_replay(database: Path, parent: GatheringRun, pause: float) -> None:
+    """Replay one gathering run's committee from a saved database."""
+    with closing(open_readonly(database)) as conn:
+        evidence = load_evidence(conn, parent.run.run_id)
+        evidence_by_id = {item.evidence_id: item for item in evidence}
+        st.markdown(f"#### Evidence pool: {parent.run.symbol}")
+        show_evidence_pool(evidence)
+
+        if parent.with_review is not None:
+            st.markdown("#### Review loop on")
+            claims = load_claims(conn, parent.with_review.run_id)
+            play_review_loop(parent.with_review, claims, evidence_by_id, pause)
+
+        if parent.without_review is not None:
+            st.markdown("#### Review loop off")
+            claims_off = load_claims(conn, parent.without_review.run_id)
+            show_no_review_setup(parent.without_review, claims_off, evidence_by_id)
+
+        if parent.with_review is not None and parent.without_review is not None:
+            st.markdown("#### Side by side")
+            show_comparison(conn, parent.with_review, parent.without_review)
+
+
+def replay_view() -> None:
+    """Pick a saved database and run, then replay its committee."""
+    st.caption("Replays saved runs from data/. No model calls, no cost, files are not changed.")
+    databases = {path.name: path for path in list_databases()}
+    if not databases:
+        st.info("No .db files in data/ yet. Run research or a live committee first.")
+        return
+    database = databases[st.selectbox("Database", list(databases), key="replay_db")]
+    try:
+        with closing(open_readonly(database)) as conn:
+            found = {item.run.run_id: item for item in gathering_runs(conn)}
+    except sqlite3.Error as error:
+        st.error(f"Could not read {database.name}: {error}")
+        return
+    if not found:
+        st.info(f"{database.name} has no finished committee runs to replay.")
+        return
+    run_id = st.selectbox(
+        "Gathering run", list(found), format_func=lambda key: found[key].label, key="replay_run"
+    )
+    parent = found[run_id]
+    pause = st.slider("Pause between steps (seconds)", 0.0, 2.0, 0.6, 0.1, key="replay_pause")
+
+    replay_key = f"{database.name}:{run_id}"
+    if st.button("Replay", type="primary", icon=":material/play_arrow:", key="replay_button"):
+        st.session_state["replayed"] = replay_key
+        show_replay(database, parent, pause)
+    elif st.session_state.get("replayed") == replay_key:
+        show_replay(database, parent, pause=0.0)
+    else:
+        st.info("Press Replay to watch the committee argue, round by round.")
+
+
+# ---- live ----------------------------------------------------------------------
+
+
+def new_database_name() -> str:
+    """Suggest a fresh file in data/ so a live run never writes into saved runs."""
+    return str(DATA_DIR / f"live_{datetime.now().strftime('%Y%m%d_%H%M')}.db")
+
+
+def run_live(symbol: str, database: Path) -> tuple[Path, str]:
+    """Gather research, then argue it with the review loop on and off.
+
+    Returns:
+        The database path and the new gathering run's id, for the replay.
+
+    Raises:
+        RuntimeError: If the research run could not be saved.
+    """
+    settings = load_settings()
+    with st.status(f"Live committee for {symbol}", expanded=True) as status:
+        st.write("Planning and gathering earnings, news, and market data...")
+        snapshot = run_research(symbol, database_path=database, planner_provider="openai")
+        if snapshot.storage_error is not None:
+            raise RuntimeError(f"Research ran but could not be saved: {snapshot.storage_error}")
+        for source, message in snapshot.gather_errors.items():
+            st.warning(f"{source.title()}: {message}")
+        st.write("Arguing the evidence with the review loop on, then off...")
+        with closing(open_db(database)) as conn:
+            run_review_comparison(conn, snapshot.run.run_id, settings, provider="openai")
+        status.update(label=f"Live committee for {symbol}: done", state="complete")
+    return database, snapshot.run.run_id
+
+
+def live_view() -> None:
+    """Run the real committee for one symbol, after a cost warning and a second click."""
+    st.caption("Runs the real pipeline. Makes paid model calls.")
+    if not load_settings().values.get("OPENAI_API_KEY"):
+        st.info(
+            "Live committee is off because OPENAI_API_KEY is not set. Add it to .env "
+            "(see .env.example) and restart the app. Committee replay works without a key."
+        )
+        return
+
+    # A widget's value can only be set before the widget is drawn in a run,
+    # so a finished run asks for a fresh file name on the next rerun.
+    if st.session_state.pop("live_db_reset", False) or "live_db" not in st.session_state:
+        st.session_state["live_db"] = new_database_name()
+        st.session_state["live_agreed"] = False
+    symbol = st.text_input("Stock symbol", value="AAPL", max_chars=10, key="live_symbol")
+    database = Path(st.text_input("New database file", key="live_db"))
+
+    can_run = True
+    if database.exists():
+        st.warning(f"{database} already exists. Live runs write to a new file only.")
+        can_run = False
+    else:
+        st.warning(
+            "This makes live model calls (planner, Bull, Bear, evaluator, and verdict) for "
+            "both setups, and your OpenAI account is billed for them."
+        )
+    agreed = st.checkbox("I understand this makes paid API calls", key="live_agreed")
+    if st.button(
+        "Run live committee", type="primary", disabled=not (agreed and can_run), key="live_run"
+    ):
+        try:
+            st.session_state["live_result"] = run_live(symbol, database)
+        except Exception as error:  # Show provider and data failures on the page.
+            st.error(str(error))
+            return
+        st.session_state["live_db_reset"] = True
+        st.rerun()
+
+    result: tuple[Path, str] | None = st.session_state.get("live_result")
+    if result is not None:
+        show_live_result(*result)
+
+
+def show_live_result(database: Path, parent_id: str) -> None:
+    """Hand a finished live run to the replay view."""
+    with closing(open_readonly(database)) as conn:
+        found = [item for item in gathering_runs(conn) if item.run.run_id == parent_id]
+    if not found:
+        st.error(f"The live run was not found in {database}.")
+        return
+    st.success(f"Saved to {database}. It also appears under Committee replay.")
+    show_replay(database, found[0], pause=0.4)
