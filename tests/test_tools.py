@@ -272,3 +272,37 @@ def test_newsapi_is_skipped_without_a_key():
         http_get=lambda url, **kwargs: pytest.fail("NewsAPI should not be called"),
     )
     assert len(articles) == 1
+
+
+class BrokenTicker:
+    """A ticker whose news property fails like a dropped connection."""
+
+    @property
+    def news(self):
+        raise requests.ConnectionError("Yahoo is down")
+
+
+def test_yahoo_outage_still_tries_search():
+    search = SimpleNamespace(news=[{"uuid": "search-1", "title": "Apple ships a phone update"}])
+
+    articles = gather_news(
+        Run(symbol="AAPL"),
+        ticker_factory=lambda symbol: BrokenTicker(),
+        search_factory=lambda symbol: search,
+        settings=settings_with(),
+    )
+
+    assert [article.article_id for article in articles] == ["search-1"]
+
+
+def test_every_source_down_raises_news_error():
+    def broken_search(symbol):
+        raise requests.ConnectionError("Search is down")
+
+    with pytest.raises(NewsDataError, match="Search failed"):
+        gather_news(
+            Run(symbol="AAPL"),
+            ticker_factory=lambda symbol: BrokenTicker(),
+            search_factory=broken_search,
+            settings=settings_with(),
+        )

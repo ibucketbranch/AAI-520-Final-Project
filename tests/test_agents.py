@@ -1,8 +1,16 @@
 """Tests for the Bull, Bear, and evaluator stubs over the shared models."""
 
+from types import SimpleNamespace
+
 from investment_committee.agents.bear import draft_bear_claims
 from investment_committee.agents.bull import draft_bull_claims
-from investment_committee.agents.evaluator import evaluate_claims, reflect
+from investment_committee.agents.evaluator import (
+    ClaimVerdict,
+    evaluate_claims,
+    evaluate_claims_model,
+    reflect,
+)
+from investment_committee.config import ENV_VARS, Settings
 from investment_committee.models import Evidence, Run
 
 
@@ -74,3 +82,35 @@ def test_reflect_with_no_claims_is_zero_confidence():
     confidence, gaps = reflect([], pool)
     assert confidence == 0.0
     assert "no claims were drafted" in gaps
+
+
+class FailSecondTime:
+    """Fake OpenAI client: first verdict is 'not supported', then it fails."""
+
+    def __init__(self):
+        self.responses = self
+        self.count = 0
+
+    def parse(self, **kwargs):
+        self.count += 1
+        if self.count > 1:
+            raise RuntimeError("API timed out")
+        verdict = ClaimVerdict(supported=False, reason="evidence says revenue rose")
+        return SimpleNamespace(output_parsed=verdict, model="test-model", usage=None)
+
+
+def test_evaluator_failure_keeps_an_earlier_rejection():
+    _, pool = make_pool()
+    claims = draft_bull_claims(pool)
+    values = {name: None for name in ENV_VARS}
+    values["OPENAI_API_KEY"] = "test"
+    settings = Settings(values=values)
+
+    result = evaluate_claims_model(claims, pool, settings, client=FailSecondTime())
+
+    assert result.claims[0].supported is False
+    assert result.claims[0].reason == "evidence says revenue rose"
+    assert result.claims[1].supported is True
+    assert result.provider_used == "rules"
+    assert result.fallback_reason
+    assert len(result.model_calls) == 1

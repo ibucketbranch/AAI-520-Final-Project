@@ -197,9 +197,10 @@ def evaluate_claims_model(
 
     The rules gate always runs first and is final for claims that cite
     evidence outside the pool. Claims that pass it go to the model gate,
-    one judgment call each. If any judgment call fails, the whole pass
-    degrades to the rules verdicts with fallback_reason recorded; calls
-    already made are kept for cost accounting.
+    one judgment call each. If a judgment call fails, the claims the model
+    already judged keep their verdicts, the rest keep the rules verdicts,
+    and fallback_reason is recorded; calls already made are kept for cost
+    accounting.
 
     Args:
         claims: Bull and Bear claims, evidence_ids populated.
@@ -224,6 +225,7 @@ def evaluate_claims_model(
         )
 
     calls: list[ModelCall] = []
+    judged: list[Claim] = []
     try:
         chosen_model = model or settings.values.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
         api_key = settings.require("OPENAI_API_KEY")
@@ -233,7 +235,6 @@ def evaluate_claims_model(
             else OpenAI(api_key=api_key, timeout=30, max_retries=0)
         )
         by_id = {item.evidence_id: item for item in evidence}
-        judged: list[Claim] = []
         with openai_client_cm as openai_client:
             for claim in rules_verdicts:
                 if claim.supported is False:
@@ -249,8 +250,11 @@ def evaluate_claims_model(
                 )
         return EvaluationResult(claims=judged, model_calls=calls)
     except (MissingKeyError, EvaluatorProviderError) as error:
+        # Keep what the model already decided. Only the claims it did not
+        # get to fall back to the rules verdicts.
+        not_judged = rules_verdicts[len(judged) :]
         return EvaluationResult(
-            claims=rules_verdicts,
+            claims=judged + not_judged,
             model_calls=calls,
             provider_requested="openai",
             provider_used="rules",

@@ -221,11 +221,17 @@ def gather_news(
     """
     make_ticker = ticker_factory or yf.Ticker
     ticker = make_ticker(run.symbol)
-    articles = _to_articles(ticker.news or [], run.symbol)
+    # A network problem on Yahoo should not stop us from trying the
+    # other sources, so treat it like an empty result.
+    try:
+        ticker_records = ticker.news or []
+    except requests.RequestException:
+        ticker_records = []
+    articles = _to_articles(ticker_records, run.symbol)
     if articles:
         return articles
 
-    # Ticker.news came back empty. Try NewsAPI next if there is a key,
+    # Ticker.news came back empty (or failed). Try NewsAPI next if there is a key,
     # because it still gives article text. Any NewsAPI problem (bad key,
     # daily limit, network) just moves on to Search.
     current_settings = settings or load_settings()
@@ -244,8 +250,12 @@ def gather_news(
     # Last resort: yfinance Search. It can also return stories about other
     # companies, so keep only the ones tagged with this symbol (or untagged).
     search = search_factory or _search_news
+    try:
+        found = search(run.symbol).news or []
+    except requests.RequestException as error:
+        raise NewsDataError(f"No news found for {run.symbol}; Search failed: {error}") from error
     search_records: list[Any] = []
-    for record in search(run.symbol).news or []:
+    for record in found:
         if not isinstance(record, Mapping):
             continue
         related = record.get("relatedTickers")
