@@ -23,7 +23,14 @@
 The path that worked in the course repo:
 
 1. `jupyter nbconvert --to html notebooks/final/<name>.ipynb`
-2. Print the HTML to PDF with headless Chrome:
-   `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --print-to-pdf=<name>.pdf <name>.html`
+2. Before printing, add this rule just before `</head>` in the HTML, or long code lines get cut off at the
+   right edge of the PDF (Chrome does not wrap code cells on its own):
+   `<style>pre, .highlight pre, .jp-RenderedText pre { white-space: pre-wrap !important; overflow-wrap: anywhere !important; }</style>`
+3. Print the HTML to PDF with headless Chrome:
+   `"/Applications/Google Chrome.app/Contents/MacOS/Google Chrome" --headless --no-pdf-header-footer --print-to-pdf=<name>.pdf <name>.html`
+
+For a text-only change (a disclosure, a typo), edit the Full notebook, run `light-from-full`, and export. Do not
+run `build` or re-run the notebook: `build` writes notebooks with no outputs, and a re-run replaces the saved
+results that section 8 describes.
 
 HTML alone is acceptable if the PDF renders badly.
