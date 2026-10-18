@@ -283,7 +283,11 @@ def run_committee(
         if not run.with_review or not unsupported or rounds >= max_rounds:
             break
 
-        kept = [claim for claim in current if claim.supported]
+        # Carry forward everything that was not rejected. That includes
+        # claims the evaluator never reached (supported None): they are
+        # judged again next round, and if the model is still down they
+        # stay unverified and show up as a gap in the memory note.
+        kept = [claim for claim in current if claim.supported is not False]
         redrafted: list[Claim] = []
         for side, draft_side in (
             ("bull", draft_bull_claims_model),

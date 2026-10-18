@@ -188,6 +188,39 @@ def test_openai_without_key_degrades_every_stage_and_records_it():
     assert all(claim.supported is None for claim in result.claims)
 
 
+def test_unverified_claim_survives_refinement_and_reaches_the_note():
+    """A claim the evaluator never judged must not vanish between rounds.
+
+    Caught in review: the bear claim was dropped when the bull side was
+    redrafted, and the memory note then said confidence 1.0 with no gaps.
+    """
+    run = make_run()
+    client = RoutingFakeClient(
+        drafts=[
+            one_claim("ev-1", text="Bull argument, weak"),
+            one_claim("ev-2", text="Bear argument"),
+            one_claim("ev-1", text="Bull argument, grounded"),
+        ],
+        # None stands for a judgment call that came back with no verdict.
+        verdicts=[
+            ClaimVerdict(supported=False, reason="the source does not say that"),
+            None,
+            ClaimVerdict(supported=True, reason="matches the source"),
+            None,
+        ],
+        decisions=[CommitteeVerdict(side="bull", reason="the growth case held")],
+    )
+    result = run_committee(run, pool(run.run_id), settings_with(OPENAI_API_KEY="k"), client=client)
+    assert result.rounds == 2
+    bear = [claim for claim in result.claims if claim.side == "bear"]
+    assert len(bear) == 1
+    assert bear[0].supported is None
+    assert result.note.confidence == 0.5
+    assert "1 claim(s) left unverified" in result.note.open_gaps
+    assert "evaluator round 1" in result.fallbacks
+    assert "evaluator round 2" in result.fallbacks
+
+
 def test_storage_adapter_persists_the_deliberation(tmp_path):
     db = tmp_path / "committee.db"
     run = make_run()
