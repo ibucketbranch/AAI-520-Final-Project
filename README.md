@@ -4,7 +4,7 @@ Multi-agent stock research, built for the AAI-520 Final Team Project.
 
 This project is a part of the AAI-520 course in the Applied Artificial Intelligence Program at the University of San Diego (USD).
 
--- Project Status: Active
+-- Project Status: Completed
 
 [![CI](https://github.com/ibucketbranch/AAI-520-Final-Project/actions/workflows/ci.yml/badge.svg)](https://github.com/ibucketbranch/AAI-520-Final-Project/actions/workflows/ci.yml)
 ![Python 3.11](https://img.shields.io/badge/python-3.11-blue)
@@ -26,17 +26,17 @@ This project is a part of the AAI-520 course in the Applied Artificial Intellige
 | Guna Pasupathy | [@gunaphysics](https://github.com/gunaphysics) |
 | Mina Habib | [@habibmn09](https://github.com/habibmn09) |
 
-Standing call Tuesdays 4:30 PM PT. Owners, time zones, and the lead in [docs/TEAM.md](docs/TEAM.md) and [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Time zones in [docs/TEAM.md](docs/TEAM.md); design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ## Project Intro/Objective
 
-You give it a stock symbol. It comes back with a buy or do-not-buy memo where every claim points at the evidence it came from, plus a note to itself for the next run.
+You give it a stock symbol. It comes back with a short memo and a bull, bear, or none verdict, where every claim points at the evidence it came from, plus a note for the next run.
 
 1. A **planner** decides what to gather for the symbol.
-2. Three gatherers fill an **evidence pool**: earnings (last quarter), news (events that could move the price), and market indicators (RSI, MACD, price history via yfinance). News goes through a five-step chain first: ingest, preprocess, classify, extract, summarize.
+2. Three gatherers fill an **evidence pool**: earnings (last quarter), news (events that could move the price), and market indicators (RSI, MACD, price history via yfinance). News goes through a six-step chain first: ingest, preprocess, classify, gate, extract, summarize.
 3. A **Bull analyst** and a **Bear analyst** argue their sides from the pool.
 4. An **evaluator** checks which claims the evidence supports and sends unsupported ones back for revision.
-5. The system writes a short **memory note** so the next run starts smarter.
+5. The system writes a short **memory note** that the planner reads on the next run.
 
 ```mermaid
 flowchart TD
@@ -65,20 +65,20 @@ Full design in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md); the decision record
 | Plans its research steps | `agents/planner.py` |
 | Uses tools dynamically | `tools/market.py`, `tools/earnings.py`, `tools/news.py` |
 | Self-reflects on output quality | `agents/evaluator.py` |
-| Learns across runs | `memory/store.py` |
+| Learns across runs | `storage.py` (`save_memory_note`, `load_latest_note`) |
 | Prompt chaining | `workflows/chaining.py` |
 | Routing | `workflows/routing.py` |
 | Evaluator-optimizer | `workflows/evaluator_optimizer.py` |
 
-Status per row in [docs/RUBRIC_MAP.md](docs/RUBRIC_MAP.md).
+Notebook section per row in [docs/RUBRIC_MAP.md](docs/RUBRIC_MAP.md).
 
 ## Project Description
 
-The committee researches one stock symbol per run. The planner uses OpenAI by default and can fall back to the rule-based plan when no key is available. Market and earnings numbers come from yfinance (price history, RSI, MACD, last-quarter results); live news comes from yfinance, then NewsAPI when `NEWSAPI_KEY` is set, then yfinance Search headlines (Yahoo's ticker news feed has returned nothing since early October); saved article JSON and committed synthetic fixtures under `tests/fixtures/` let tests and the notebook run offline with no key. A local SQLite database is built on first run from committed sample data and holds the evidence pool, run transcripts, and cross-run memory notes; `storage.py` is the only module that touches it. The question the evaluation section answers: does the evaluator loop raise the share of supported claims? We run held-out symbols with and without the loop and count supported vs unsupported claims per run. A known roadblock is that yfinance is an unofficial Yahoo interface and can break without notice; the saved-article path covers the final notebook.
+The committee researches one stock symbol per run. The planner uses OpenAI by default and can fall back to the rule-based plan when no key is available. Market and earnings numbers come from yfinance (price history, RSI, MACD, last-quarter results); live news comes from yfinance, then NewsAPI when `NEWSAPI_KEY` is set, then yfinance Search headlines (Yahoo's ticker news feed has returned nothing since early October); saved article JSON and committed synthetic fixtures under `tests/fixtures/` let tests and the notebook run offline with no key. A local SQLite database is built on first run from committed sample data and holds the evidence pool, run transcripts, and cross-run memory notes; `storage.py` is the only module that touches it. The evaluation section asks whether the evaluator loop raises the share of supported claims. We ran three stocks with and without the loop and counted supported and rejected claims per run; the results are in sections 7 and 8 of the notebook. A known roadblock is that yfinance is an unofficial Yahoo interface and can break without notice.
 
 ## Methods Used
 
-- NLP preprocessing and entity extraction (the five-step news chain, spaCy NER)
+- NLP preprocessing and entity extraction (the six-step news chain, spaCy NER)
 - Multi-agent LLM workflows: prompt chaining, routing, evaluator-optimizer
 - Technical market indicators (RSI, MACD)
 - Claim-evidence evaluation (supported vs unsupported claim counts)
@@ -91,12 +91,12 @@ The committee researches one stock symbol per run. The planner uses OpenAI by de
 - SQLite
 - pytest with a 90 percent coverage floor, ruff, mypy, pre-commit, GitHub Actions
 
-## Decisions so far
+## Design decisions
 
 - **SQLite, one owner.** The notebook builds a local database on first run from committed sample data. One person owns the schema and `storage.py`; everything else goes through that module. Database files are never committed. [ADR-0003](docs/adr/0003-storage-choice.md)
-- **Contracts first.** `models.py` (shared record shapes) and `storage.py` (the only door to the database) land by Sep 22 so the three of us build in parallel.
+- **Contracts first.** `models.py` (shared record shapes) and `storage.py` (the only door to the database) landed by Sep 22 so the three of us could build in parallel.
 - **Selectable planner.** The UI uses OpenAI by default and keeps the rule-based planner as an offline option and fallback. [ADR-0005](docs/adr/0005-planner-provider.md)
-- **Stretch, only if v1 is done:** NLI claim checking, RAG over SEC EDGAR filings, a cross-model judge, and a small UI last.
+- **Stretch:** a small Streamlit UI was built (`make ui`). NLI claim checking, RAG over SEC EDGAR filings, and a cross-model judge were not; section 8 of the notebook lists them under more time.
 
 ## Plan
 
@@ -143,7 +143,7 @@ Requires Python 3.11. Tests run with no network; the tools are mocked.
 src/investment_committee/   the package: agents/, tools/, workflows/, memory/, evaluation/
 tests/                      pytest suite, fixtures under tests/fixtures/
 notebooks/dev/              per-person dev notebooks, outputs stripped on commit
-notebooks/final/            the single submitted notebook
+notebooks/final/            the submitted notebook (Full) and a shorter Light copy
 docs/                       architecture, milestones, team, rubric map, AI disclosure, ADRs
 data/                       local datasets and the SQLite file, gitignored
 scripts/                    repo checks run by hooks and CI
