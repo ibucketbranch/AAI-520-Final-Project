@@ -75,8 +75,8 @@ def reflect(claims: list[Claim], evidence: list[Evidence]) -> tuple[float, list[
 
     Returns:
         (confidence, open_gaps): confidence in [0, 1], 0.0 when there are
-        no claims; open_gaps lists missing gatherer sources and the count
-        of unsupported claims when there are any.
+        no claims; open_gaps lists missing gatherer sources and the counts
+        of unsupported and unverified claims when there are any.
     """
     gaps: list[str] = []
     seen_sources = {item.source for item in evidence}
@@ -90,7 +90,11 @@ def reflect(claims: list[Claim], evidence: list[Evidence]) -> tuple[float, list[
     unsupported = [c for c in claims if c.supported is False]
     if unsupported:
         gaps.append(f"{len(unsupported)} claim(s) sent back as unsupported")
-    confidence = (len(claims) - len(unsupported)) / len(claims)
+    not_judged = [c for c in claims if c.supported is None]
+    if not_judged:
+        gaps.append(f"{len(not_judged)} claim(s) left unverified")
+    supported = [c for c in claims if c.supported]
+    confidence = len(supported) / len(claims)
     return confidence, gaps
 
 
@@ -198,9 +202,10 @@ def evaluate_claims_model(
     The rules gate always runs first and is final for claims that cite
     evidence outside the pool. Claims that pass it go to the model gate,
     one judgment call each. If a judgment call fails, the claims the model
-    already judged keep their verdicts, the rest keep the rules verdicts,
-    and fallback_reason is recorded; calls already made are kept for cost
-    accounting.
+    already judged keep their verdicts. Claims it did not reach are left
+    unverified (supported None) rather than passed on the citation check
+    alone, and fallback_reason is recorded; calls already made are kept
+    for cost accounting.
 
     Args:
         claims: Bull and Bear claims, evidence_ids populated.
@@ -250,11 +255,23 @@ def evaluate_claims_model(
                 )
         return EvaluationResult(claims=judged, model_calls=calls)
     except (MissingKeyError, EvaluatorProviderError) as error:
-        # Keep what the model already decided. Only the claims it did not
-        # get to fall back to the rules verdicts.
-        not_judged = rules_verdicts[len(judged) :]
+        # Keep what the model already decided. The claims it did not get to
+        # stay unverified: passing the citation check alone is not a reason
+        # to call them supported. Rules rejections (bad citations) still stand.
+        for claim in rules_verdicts[len(judged) :]:
+            if claim.supported is False:
+                judged.append(claim)
+            else:
+                judged.append(
+                    claim.model_copy(
+                        update={
+                            "supported": None,
+                            "reason": "not judged: the model evaluator was unavailable",
+                        }
+                    )
+                )
         return EvaluationResult(
-            claims=judged + not_judged,
+            claims=judged,
             model_calls=calls,
             provider_requested="openai",
             provider_used="rules",

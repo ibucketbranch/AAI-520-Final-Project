@@ -184,7 +184,8 @@ def test_openai_without_key_degrades_every_stage_and_records_it():
     assert "evaluator round 1" in result.fallbacks
     assert "verdict" in result.fallbacks
     assert result.model_calls == []
-    assert all(claim.supported for claim in result.claims)
+    # Nothing was judged by a model, so nothing may be called supported.
+    assert all(claim.supported is None for claim in result.claims)
 
 
 def test_storage_adapter_persists_the_deliberation(tmp_path):

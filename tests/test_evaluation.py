@@ -102,6 +102,8 @@ def test_score_run_counts_a_rejected_draft_and_the_extra_round():
         verdicts=[
             ClaimVerdict(supported=True, reason="matches the source"),
             ClaimVerdict(supported=False, reason="the source does not say that"),
+            # Round two judges the kept bull claim again and the new bear claim.
+            ClaimVerdict(supported=True, reason="matches the source"),
             ClaimVerdict(supported=True, reason="matches the numbers"),
         ],
         decisions=[CommitteeVerdict(side="bear", reason="the risk case held up")],
@@ -116,6 +118,7 @@ def test_score_run_counts_a_rejected_draft_and_the_extra_round():
     assert score.rounds == result.rounds == 2
     assert score.claims_supported == 2
     assert score.claims_rejected == 1
+    assert score.fallbacks == {}
 
 
 def test_score_run_fails_loudly_on_missing_and_unfinished_runs():
@@ -144,6 +147,22 @@ def test_comparison_rows_build_the_notebook_table():
     assert {"rounds", "supported claims", "rejected drafts", "model calls", "tokens"} <= set(
         rows[0]
     )
+    assert [row["degraded stages"] for row in rows] == ["none", "none"]
+
+
+def test_scorecard_flags_a_run_whose_evaluator_fell_back():
+    """Damage prevented: a citation-only run passing as a judged one."""
+    conn, parent = seeded_conn()
+    run = Run(symbol=parent.symbol, parent_run_id=parent.run_id)
+    save_run(conn, run)
+    # No API key, so every model stage falls back; that has to be visible.
+    run_committee_from_storage(conn, run.run_id, settings_with(), provider="openai")
+
+    score = score_run(conn, run.run_id)
+    assert "evaluator round 1" in score.fallbacks
+    assert score.claims_supported == 0
+    row = comparison_rows(conn, [run.run_id])[0]
+    assert "evaluator round 1" in row["degraded stages"]
 
 
 def test_score_run_uses_completed_rounds_not_highest_claim_revision():

@@ -397,4 +397,4 @@ def persist_committee(conn: sqlite3.Connection, result: CommitteeResult) -> None
     for call in result.model_calls:
         save_model_call(conn, call)
     save_memory_note(conn, result.note)
-    finish_run(conn, result.run.run_id, result.memo, now_iso())
+    finish_run(conn, result.run.run_id, result.memo, now_iso(), result.fallbacks)

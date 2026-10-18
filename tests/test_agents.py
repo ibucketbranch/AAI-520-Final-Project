@@ -77,6 +77,15 @@ def test_reflect_reports_confidence_and_gaps():
     assert any("unsupported" in g for g in gaps)
 
 
+def test_reflect_does_not_count_unverified_claims_as_supported():
+    _, pool = make_pool()
+    checked = evaluate_claims(draft_bull_claims(pool), pool)
+    unverified = checked[0].model_copy(update={"supported": None, "reason": "not judged"})
+    confidence, gaps = reflect([unverified, checked[1]], pool)
+    assert confidence == 0.5
+    assert "1 claim(s) left unverified" in gaps
+
+
 def test_reflect_with_no_claims_is_zero_confidence():
     _, pool = make_pool()
     confidence, gaps = reflect([], pool)
@@ -99,7 +108,7 @@ class FailSecondTime:
         return SimpleNamespace(output_parsed=verdict, model="test-model", usage=None)
 
 
-def test_evaluator_failure_keeps_an_earlier_rejection():
+def test_evaluator_failure_keeps_rejections_and_leaves_the_rest_unverified():
     _, pool = make_pool()
     claims = draft_bull_claims(pool)
     values = {name: None for name in ENV_VARS}
@@ -110,7 +119,9 @@ def test_evaluator_failure_keeps_an_earlier_rejection():
 
     assert result.claims[0].supported is False
     assert result.claims[0].reason == "evidence says revenue rose"
-    assert result.claims[1].supported is True
+    # The second claim was never judged, so it must not come back supported.
+    assert result.claims[1].supported is None
+    assert "not judged" in result.claims[1].reason
     assert result.provider_used == "rules"
     assert result.fallback_reason
     assert len(result.model_calls) == 1

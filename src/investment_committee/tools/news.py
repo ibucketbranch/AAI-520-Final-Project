@@ -23,6 +23,7 @@ from typing import Any
 
 import requests
 import yfinance as yf
+from yfinance.exceptions import YFException
 
 from investment_committee.config import Settings, load_settings
 from investment_committee.models import Run
@@ -45,6 +46,13 @@ NAME_SUFFIXES = ["inc", "corporation", "corp", "co", "ltd", "plc"]
 
 # NewsAPI cuts content off and ends it with a marker like "[+1234 chars]".
 TRUNCATED_MARKER = re.compile(r"\s*\[\+\d+ chars\]\s*$")
+
+
+# yfinance reaches Yahoo through curl_cffi, not requests. Both libraries'
+# errors are OSError subclasses, yfinance raises its own YFException family
+# for outages and rate limits, and a bad JSON body is a ValueError. These are
+# the "the provider is having trouble" errors a source boundary should absorb.
+PROVIDER_ERRORS = (OSError, YFException, ValueError)
 
 
 class NewsDataError(RuntimeError):
@@ -221,11 +229,11 @@ def gather_news(
     """
     make_ticker = ticker_factory or yf.Ticker
     ticker = make_ticker(run.symbol)
-    # A network problem on Yahoo should not stop us from trying the
-    # other sources, so treat it like an empty result.
+    # A Yahoo problem should not stop us from trying the other sources,
+    # so treat it like an empty result.
     try:
         ticker_records = ticker.news or []
-    except requests.RequestException:
+    except PROVIDER_ERRORS:
         ticker_records = []
     articles = _to_articles(ticker_records, run.symbol)
     if articles:
@@ -252,7 +260,7 @@ def gather_news(
     search = search_factory or _search_news
     try:
         found = search(run.symbol).news or []
-    except requests.RequestException as error:
+    except PROVIDER_ERRORS as error:
         raise NewsDataError(f"No news found for {run.symbol}; Search failed: {error}") from error
     search_records: list[Any] = []
     for record in found:

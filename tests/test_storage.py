@@ -11,6 +11,7 @@ from investment_committee.storage import (
     finish_run,
     load_claims,
     load_evidence,
+    load_fallbacks,
     load_latest_note,
     load_model_calls,
     load_run,
@@ -57,6 +58,19 @@ def test_run_round_trip_and_finish(conn):
     assert load_run(conn, "missing") is None
 
 
+def test_finish_run_records_the_degraded_stages(conn):
+    assert load_fallbacks(conn, "r1") == {}
+    finish_run(
+        conn,
+        "r1",
+        memo="Verdict: none.",
+        finished_at="2026-09-15T00:00:00+00:00",
+        fallbacks={"evaluator round 1": "no API key"},
+    )
+    assert load_fallbacks(conn, "r1") == {"evaluator round 1": "no API key"}
+    assert load_fallbacks(conn, "missing") == {}
+
+
 def test_old_database_is_migrated_without_losing_records(tmp_path):
     path = tmp_path / "old.db"
     old = sqlite3.connect(path)
@@ -76,6 +90,7 @@ def test_old_database_is_migrated_without_losing_records(tmp_path):
             assert run.parent_run_id is None
             columns = [row["name"] for row in conn.execute("PRAGMA table_info(runs)")]
             assert columns.count("parent_run_id") == 1
+            assert columns.count("fallbacks") == 1
         finally:
             conn.close()
     conn = open_db(path)
