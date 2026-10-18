@@ -151,3 +151,15 @@ def test_processed_news_becomes_shared_evidence(nlp):
     assert all(item.run_id == run.run_id for item in evidence)
     assert all(item.content for item in evidence)
     assert not any(item.title.startswith("Netflix café") for item in evidence)
+
+
+def test_processed_news_skips_other_companies(nlp):
+    from investment_committee.models import Run
+    from investment_committee.workflows.chaining import processed_to_evidence
+
+    processed = run_chain(ingest(FIXTURE_PATH), nlp)
+    tesla_titles = {item.article.title for item in processed if item.article.symbol == "TSLA"}
+    evidence = processed_to_evidence(Run(symbol="AAPL"), processed)
+
+    assert evidence
+    assert all(item.title not in tesla_titles for item in evidence)

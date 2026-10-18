@@ -6,6 +6,8 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 import requests
+from curl_cffi.requests import exceptions as curl_errors
+from yfinance.exceptions import YFDataException
 
 from investment_committee.config import ENV_VARS, Settings
 from investment_committee.models import Run
@@ -272,3 +274,58 @@ def test_newsapi_is_skipped_without_a_key():
         http_get=lambda url, **kwargs: pytest.fail("NewsAPI should not be called"),
     )
     assert len(articles) == 1
+
+
+class BrokenTicker:
+    """A ticker whose news property raises the error it is given."""
+
+    def __init__(self, error):
+        self.error = error
+
+    @property
+    def news(self):
+        raise self.error
+
+
+def test_yahoo_timeout_still_tries_search():
+    # yfinance talks to Yahoo with curl_cffi, so this is the real error type,
+    # not requests.ConnectionError.
+    ticker = BrokenTicker(curl_errors.Timeout("Yahoo timed out"))
+    search = SimpleNamespace(news=[{"uuid": "search-1", "title": "Apple ships a phone update"}])
+
+    articles = gather_news(
+        Run(symbol="AAPL"),
+        ticker_factory=lambda symbol: ticker,
+        search_factory=lambda symbol: search,
+        settings=settings_with(),
+    )
+
+    assert [article.article_id for article in articles] == ["search-1"]
+
+
+def test_yahoo_outage_error_still_tries_search():
+    # This is what yfinance raises when Yahoo answers "Will be right back".
+    ticker = BrokenTicker(YFDataException("Yahoo is down"))
+    search = SimpleNamespace(news=[{"uuid": "search-1", "title": "Apple ships a phone update"}])
+
+    articles = gather_news(
+        Run(symbol="AAPL"),
+        ticker_factory=lambda symbol: ticker,
+        search_factory=lambda symbol: search,
+        settings=settings_with(),
+    )
+
+    assert [article.article_id for article in articles] == ["search-1"]
+
+
+def test_every_source_down_raises_news_error():
+    def broken_search(symbol):
+        raise curl_errors.ConnectionError("Search is down")
+
+    with pytest.raises(NewsDataError, match="Search failed"):
+        gather_news(
+            Run(symbol="AAPL"),
+            ticker_factory=lambda symbol: BrokenTicker(curl_errors.Timeout("Yahoo timed out")),
+            search_factory=broken_search,
+            settings=settings_with(),
+        )

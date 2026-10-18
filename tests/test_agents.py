@@ -1,8 +1,16 @@
 """Tests for the Bull, Bear, and evaluator stubs over the shared models."""
 
+from types import SimpleNamespace
+
 from investment_committee.agents.bear import draft_bear_claims
 from investment_committee.agents.bull import draft_bull_claims
-from investment_committee.agents.evaluator import evaluate_claims, reflect
+from investment_committee.agents.evaluator import (
+    ClaimVerdict,
+    evaluate_claims,
+    evaluate_claims_model,
+    reflect,
+)
+from investment_committee.config import ENV_VARS, Settings
 from investment_committee.models import Evidence, Run
 
 
@@ -69,8 +77,51 @@ def test_reflect_reports_confidence_and_gaps():
     assert any("unsupported" in g for g in gaps)
 
 
+def test_reflect_does_not_count_unverified_claims_as_supported():
+    _, pool = make_pool()
+    checked = evaluate_claims(draft_bull_claims(pool), pool)
+    unverified = checked[0].model_copy(update={"supported": None, "reason": "not judged"})
+    confidence, gaps = reflect([unverified, checked[1]], pool)
+    assert confidence == 0.5
+    assert "1 claim(s) left unverified" in gaps
+
+
 def test_reflect_with_no_claims_is_zero_confidence():
     _, pool = make_pool()
     confidence, gaps = reflect([], pool)
     assert confidence == 0.0
     assert "no claims were drafted" in gaps
+
+
+class FailSecondTime:
+    """Fake OpenAI client: first verdict is 'not supported', then it fails."""
+
+    def __init__(self):
+        self.responses = self
+        self.count = 0
+
+    def parse(self, **kwargs):
+        self.count += 1
+        if self.count > 1:
+            raise RuntimeError("API timed out")
+        verdict = ClaimVerdict(supported=False, reason="evidence says revenue rose")
+        return SimpleNamespace(output_parsed=verdict, model="test-model", usage=None)
+
+
+def test_evaluator_failure_keeps_rejections_and_leaves_the_rest_unverified():
+    _, pool = make_pool()
+    claims = draft_bull_claims(pool)
+    values = {name: None for name in ENV_VARS}
+    values["OPENAI_API_KEY"] = "test"
+    settings = Settings(values=values)
+
+    result = evaluate_claims_model(claims, pool, settings, client=FailSecondTime())
+
+    assert result.claims[0].supported is False
+    assert result.claims[0].reason == "evidence says revenue rose"
+    # The second claim was never judged, so it must not come back supported.
+    assert result.claims[1].supported is None
+    assert "not judged" in result.claims[1].reason
+    assert result.provider_used == "rules"
+    assert result.fallback_reason
+    assert len(result.model_calls) == 1
