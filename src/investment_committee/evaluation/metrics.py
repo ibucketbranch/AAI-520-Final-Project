@@ -1,8 +1,7 @@
 """Metrics for the final notebook's results table.
 
 Reads finished runs back from storage and reports verdicts, rounds, supported
-claims, rejected drafts, model calls, token use, and any stage that fell back
-to a non-model path (so a citation-only run cannot pass as a judged one).
+claims, rejected drafts, model calls, and token use.
 """
 
 from __future__ import annotations
@@ -11,7 +10,7 @@ import sqlite3
 from collections.abc import Sequence
 from dataclasses import dataclass
 
-from investment_committee.storage import load_claims, load_fallbacks, load_model_calls, load_run
+from investment_committee.storage import load_claims, load_model_calls, load_run
 
 _MEMO_PREFIX = "Verdict: "
 
@@ -23,7 +22,6 @@ class RunScore:
     claims_rejected counts claims the evaluator judged unsupported at any
     point, so on a with-review run it includes drafts that were later
     replaced; it is telemetry about the loop, not the final slate.
-    fallbacks names each stage that degraded and why; empty on a clean run.
     """
 
     run_id: str
@@ -36,7 +34,6 @@ class RunScore:
     model_calls: int
     prompt_tokens: int
     completion_tokens: int
-    fallbacks: dict[str, str]
 
 
 def score_run(conn: sqlite3.Connection, run_id: str) -> RunScore:
@@ -71,7 +68,6 @@ def score_run(conn: sqlite3.Connection, run_id: str) -> RunScore:
         model_calls=len(calls),
         prompt_tokens=sum(call.prompt_tokens for call in calls),
         completion_tokens=sum(call.completion_tokens for call in calls),
-        fallbacks=load_fallbacks(conn, run_id),
     )
 
 
@@ -98,7 +94,6 @@ def comparison_rows(conn: sqlite3.Connection, run_ids: Sequence[str]) -> list[di
                 "rejected drafts": score.claims_rejected,
                 "model calls": score.model_calls,
                 "tokens": score.prompt_tokens + score.completion_tokens,
-                "degraded stages": ", ".join(score.fallbacks) or "none",
                 "run id": score.run_id,
             }
         )

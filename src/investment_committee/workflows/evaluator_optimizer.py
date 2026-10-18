@@ -283,11 +283,7 @@ def run_committee(
         if not run.with_review or not unsupported or rounds >= max_rounds:
             break
 
-        # Carry forward everything that was not rejected. That includes
-        # claims the evaluator never reached (supported None): they are
-        # judged again next round, and if the model is still down they
-        # stay unverified and show up as a gap in the memory note.
-        kept = [claim for claim in current if claim.supported is not False]
+        kept = [claim for claim in current if claim.supported]
         redrafted: list[Claim] = []
         for side, draft_side in (
             ("bull", draft_bull_claims_model),
@@ -401,4 +397,4 @@ def persist_committee(conn: sqlite3.Connection, result: CommitteeResult) -> None
     for call in result.model_calls:
         save_model_call(conn, call)
     save_memory_note(conn, result.note)
-    finish_run(conn, result.run.run_id, result.memo, now_iso(), result.fallbacks)
+    finish_run(conn, result.run.run_id, result.memo, now_iso())

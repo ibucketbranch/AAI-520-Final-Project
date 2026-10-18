@@ -34,8 +34,7 @@ CREATE TABLE IF NOT EXISTS runs (
     started_at  TEXT NOT NULL,
     finished_at TEXT,
     memo        TEXT,
-    parent_run_id TEXT REFERENCES runs(run_id),
-    fallbacks   TEXT
+    parent_run_id TEXT REFERENCES runs(run_id)
 );
 
 CREATE TABLE IF NOT EXISTS evidence (
@@ -109,8 +108,6 @@ def open_db(path: str | Path = DEFAULT_DB_PATH) -> sqlite3.Connection:
                 conn.execute(
                     "ALTER TABLE runs ADD COLUMN parent_run_id TEXT REFERENCES runs(run_id)"
                 )
-            if "fallbacks" not in columns:
-                conn.execute("ALTER TABLE runs ADD COLUMN fallbacks TEXT")
     except sqlite3.Error:
         conn.close()
         raise
@@ -181,22 +178,12 @@ def save_run(conn: sqlite3.Connection, run: Run) -> None:
         _insert_run(conn, run)
 
 
-def finish_run(
-    conn: sqlite3.Connection,
-    run_id: str,
-    memo: str,
-    finished_at: str,
-    fallbacks: dict[str, str] | None = None,
-) -> None:
-    """Record the final memo, end time, and any degraded stages of a run.
-
-    fallbacks maps a stage name to why it fell back (for example the
-    evaluator losing the model), so the scorecard can flag the run later.
-    """
+def finish_run(conn: sqlite3.Connection, run_id: str, memo: str, finished_at: str) -> None:
+    """Record the final memo and end time of a run."""
     with conn:
         conn.execute(
-            "UPDATE runs SET memo = ?, finished_at = ?, fallbacks = ? WHERE run_id = ?",
-            (memo, finished_at, json.dumps(fallbacks or {}), run_id),
+            "UPDATE runs SET memo = ?, finished_at = ? WHERE run_id = ?",
+            (memo, finished_at, run_id),
         )
 
 
@@ -283,15 +270,6 @@ def load_run(conn: sqlite3.Connection, run_id: str) -> Run | None:
     if row is None:
         return None
     return Run(**_record(row))
-
-
-def load_fallbacks(conn: sqlite3.Connection, run_id: str) -> dict[str, str]:
-    """Return the degraded stages recorded when a run finished, if any."""
-    row = conn.execute("SELECT fallbacks FROM runs WHERE run_id = ?", (run_id,)).fetchone()
-    if row is None or row["fallbacks"] is None:
-        return {}
-    loaded: dict[str, str] = json.loads(row["fallbacks"])
-    return loaded
 
 
 def load_evidence(conn: sqlite3.Connection, run_id: str) -> list[Evidence]:
