@@ -329,14 +329,11 @@ def processed_to_evidence(run: Run, articles: list[ProcessedArticle]) -> list[Ev
         articles: Output from ``run_chain()``.
 
     Returns:
-        Evidence records for accepted articles about run.symbol only.
+        Evidence records for accepted articles only.
     """
     evidence: list[Evidence] = []
     for item in articles:
         if not item.accepted:
-            continue
-        # Do not file another company's article under this run's symbol.
-        if item.article.symbol != run.symbol:
             continue
 
         evidence.append(
