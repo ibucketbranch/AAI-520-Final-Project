@@ -13,7 +13,9 @@ from investment_committee.config import ENV_VARS, MissingKeyError, Settings
 # ui_committee.py sits at the repo root next to app.py, outside the package.
 sys.path.insert(0, str(Path(__file__).parents[1]))
 from ui_committee import (  # noqa: E402
+    GatheringRun,
     ModelServer,
+    committee_model_calls,
     model_servers,
     run_warnings,
     server_settings,
@@ -115,7 +117,7 @@ def test_configured_servers_are_listed_with_billing_flags():
 
 def test_server_settings_point_every_stage_at_one_server():
     """Planner, analysts, evaluator, and chair all read these four values."""
-    server = ModelServer("Local", "http://local.test/v1", "local-key", billed=False)
+    server = ModelServer("Local", "http://local.test/v1", "local-key", billed=False, timeout=300)
 
     chosen = server_settings(settings_with(OPENAI_API_KEY="openai-key"), server, "gemma", 300)
 
@@ -137,3 +139,47 @@ def test_run_warnings_list_every_fallback():
         "Planner used the rule-based plan: timed out",
         "review on, bull: timed out",
     ]
+
+
+def test_local_server_uses_its_own_timeout():
+    """Local calls need minutes; a 30 second wait made a whole run fall back to the template."""
+    servers, _ = model_servers(
+        settings_with(
+            OPENAI_API_KEY="openai-key",
+            LOCAL_LLM_BASE_URL="http://local.test/v1",
+            LOCAL_LLM_API_KEY="local-key",
+            LOCAL_LLM_TIMEOUT="300",
+        )
+    )
+
+    assert [server.timeout for server in servers] == [30.0, 300.0]
+
+
+def test_local_timeout_falls_back_to_the_shared_timeout():
+    """Without LOCAL_LLM_TIMEOUT the local server waits as long as every other server."""
+    assert settings_with(OPENAI_TIMEOUT="90").local_llm_timeout() == 90.0
+
+
+def test_bad_local_timeout_names_the_variable():
+    """A typo in LOCAL_LLM_TIMEOUT must point at that variable, not OPENAI_TIMEOUT."""
+    with pytest.raises(ValueError, match="LOCAL_LLM_TIMEOUT"):
+        settings_with(LOCAL_LLM_TIMEOUT="soon").local_llm_timeout()
+
+
+def test_committee_model_calls_counts_both_arms(monkeypatch):
+    """A run with zero saved calls is template-only, so the replay must be able to tell."""
+    saved = {"on": ["call", "call"], "off": ["call"], "none": []}
+    monkeypatch.setattr("ui_committee.load_model_calls", lambda conn, run_id: saved[run_id])
+    both = GatheringRun(
+        run=SimpleNamespace(run_id="parent"),
+        with_review=SimpleNamespace(run_id="on"),
+        without_review=SimpleNamespace(run_id="off"),
+    )
+    template_only = GatheringRun(
+        run=SimpleNamespace(run_id="parent"),
+        with_review=SimpleNamespace(run_id="none"),
+        without_review=None,
+    )
+
+    assert committee_model_calls(None, both) == 3
+    assert committee_model_calls(None, template_only) == 0

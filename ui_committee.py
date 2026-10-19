@@ -35,7 +35,13 @@ from investment_committee.evaluation.harness import (
 )
 from investment_committee.evaluation.metrics import RunScore, comparison_rows, score_run
 from investment_committee.models import Claim, Evidence, Run
-from investment_committee.storage import load_claims, load_evidence, load_run, open_db
+from investment_committee.storage import (
+    load_claims,
+    load_evidence,
+    load_model_calls,
+    load_run,
+    open_db,
+)
 from investment_committee.workflows.runner import ResearchSnapshot, run_research
 
 DATA_DIR = Path("data")
@@ -316,9 +322,21 @@ def show_comparison(conn: sqlite3.Connection, with_review: Run, without_review: 
     )
 
 
+def committee_model_calls(conn: sqlite3.Connection, parent: GatheringRun) -> int:
+    """Count the model calls saved for a gathering run's committee runs."""
+    runs = [run for run in (parent.with_review, parent.without_review) if run is not None]
+    return sum(len(load_model_calls(conn, run.run_id)) for run in runs)
+
+
 def show_replay(database: Path, parent: GatheringRun, pause: float) -> None:
     """Replay one gathering run's committee from a saved database."""
     with closing(open_readonly(database)) as conn:
+        has_committee = parent.with_review is not None or parent.without_review is not None
+        if has_committee and committee_model_calls(conn, parent) == 0:
+            st.error(
+                "No model answered in this run. Every claim, judgment, and verdict below "
+                "came from the offline template and rules, not from a model."
+            )
         evidence = load_evidence(conn, parent.run.run_id)
         evidence_by_id = {item.evidence_id: item for item in evidence}
         st.markdown(f"#### Evidence pool: {parent.run.symbol}")
@@ -388,6 +406,7 @@ class ModelServer:
     base_url: str | None
     api_key: str
     billed: bool
+    timeout: float
     known_models: tuple[str, ...] | None = None
 
 
@@ -410,17 +429,24 @@ def model_servers(settings: Settings) -> tuple[list[ModelServer], list[str]]:
                 values.get("OPENAI_BASE_URL"),
                 values["OPENAI_API_KEY"],
                 True,
+                settings.openai_timeout(),
                 CURRENT_OPENAI_MODELS,
             )
         )
     pairs = (
-        ("Local", "LOCAL_LLM_BASE_URL", "LOCAL_LLM_API_KEY", False),
-        ("OpenRouter", "OPENROUTER_BASE_URL", "OPENROUTER_API_KEY", True),
+        ("Local", "LOCAL_LLM_BASE_URL", "LOCAL_LLM_API_KEY", False, settings.local_llm_timeout()),
+        (
+            "OpenRouter",
+            "OPENROUTER_BASE_URL",
+            "OPENROUTER_API_KEY",
+            True,
+            settings.openai_timeout(),
+        ),
     )
-    for name, url_var, key_var, billed in pairs:
+    for name, url_var, key_var, billed, timeout in pairs:
         url, key = values.get(url_var), values.get(key_var)
         if url and key:
-            servers.append(ModelServer(f"{name} ({url})", url, key, billed))
+            servers.append(ModelServer(f"{name} ({url})", url, key, billed, timeout))
         elif url or key:
             missing = key_var if url else url_var
             notes.append(f"{name} is left out because {missing} is not set.")
@@ -520,9 +546,10 @@ def live_view() -> None:
     timeout = st.number_input(
         "Seconds to wait for each model call",
         min_value=1.0,
-        value=settings.openai_timeout(),
+        value=server.timeout,
         step=30.0,
-        key="live_timeout",
+        # One box per server, so switching servers shows that server's own default.
+        key=f"live_timeout_{server.label}",
         help="Local models can need minutes per call. A call that runs out of time "
         "falls back to the template or rules, and the page lists it.",
     )

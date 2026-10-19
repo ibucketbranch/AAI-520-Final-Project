@@ -24,6 +24,7 @@ ENV_VARS: tuple[str, ...] = (
     "OPENAI_BASE_URL",
     "LOCAL_LLM_BASE_URL",
     "LOCAL_LLM_API_KEY",
+    "LOCAL_LLM_TIMEOUT",
     "OPENROUTER_BASE_URL",
     "OPENROUTER_API_KEY",
     "ANTHROPIC_API_KEY",
@@ -48,6 +49,17 @@ class MissingKeyError(RuntimeError):
         )
 
 
+def _positive_seconds(name: str, value: str) -> float:
+    """Parse a timeout variable, failing with its name if it is not a positive number."""
+    try:
+        seconds = float(value)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a positive number of seconds.") from error
+    if not isfinite(seconds) or seconds <= 0:
+        raise ValueError(f"{name} must be a positive number of seconds.")
+    return seconds
+
+
 class Settings(BaseModel):
     """A snapshot of the environment variables the project knows about.
 
@@ -59,14 +71,18 @@ class Settings(BaseModel):
 
     def openai_timeout(self) -> float:
         """Return the shared request timeout in seconds, defaulting to 30."""
-        value = self.values.get("OPENAI_TIMEOUT") or "30"
-        try:
-            timeout = float(value)
-        except ValueError as error:
-            raise ValueError("OPENAI_TIMEOUT must be a positive number of seconds.") from error
-        if not isfinite(timeout) or timeout <= 0:
-            raise ValueError("OPENAI_TIMEOUT must be a positive number of seconds.")
-        return timeout
+        return _positive_seconds("OPENAI_TIMEOUT", self.values.get("OPENAI_TIMEOUT") or "30")
+
+    def local_llm_timeout(self) -> float:
+        """Return LOCAL_LLM_TIMEOUT, or the shared timeout when it is not set.
+
+        Local models answer much more slowly than hosted ones, so the local
+        server gets its own setting instead of raising the shared one.
+        """
+        value = self.values.get("LOCAL_LLM_TIMEOUT")
+        if not value:
+            return self.openai_timeout()
+        return _positive_seconds("LOCAL_LLM_TIMEOUT", value)
 
     def openai_client_options(self) -> dict[str, Any]:
         """Return the keyword arguments every OpenAI client in the project uses.
