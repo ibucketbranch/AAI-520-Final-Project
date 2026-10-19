@@ -107,8 +107,8 @@ def show_results(snapshot: ResearchSnapshot) -> None:
     )
 
 
-st.set_page_config(page_title="AI Investment Committee", page_icon=None, layout="wide")
-st.title("AI Investment Committee")
+st.set_page_config(page_title="Group 7 AI Investment Committee", page_icon=None, layout="wide")
+st.title("Group 7 AI Investment Committee")
 
 # The committee views live in ui_committee.py. Research stays the first view,
 # and st.stop() ends the run so the research form below is not drawn under them.
