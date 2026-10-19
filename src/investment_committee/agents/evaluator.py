@@ -226,12 +226,8 @@ def evaluate_claims_model(
     calls: list[ModelCall] = []
     try:
         chosen_model = model or settings.values.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
-        api_key = settings.require("OPENAI_API_KEY")
-        openai_client_cm = (
-            nullcontext(client)
-            if client is not None
-            else OpenAI(api_key=api_key, timeout=30, max_retries=0)
-        )
+        options = settings.openai_client_options()
+        openai_client_cm = nullcontext(client) if client is not None else OpenAI(**options)
         by_id = {item.evidence_id: item for item in evidence}
         judged: list[Claim] = []
         with openai_client_cm as openai_client:

@@ -183,8 +183,9 @@ def test_run_research_reports_the_selected_rule_based_planner():
 
 
 def test_runner_passes_the_model_choice_and_saves_the_reported_model(monkeypatch, tmp_path):
-    def fake_planner(symbol, run_id, provider, model, previous_note):
+    def fake_planner(symbol, run_id, provider, model, previous_note, settings):
         assert previous_note is None
+        assert settings is None
         assert provider == "openai"
         assert model == "gpt-4.1-mini"
         return PlanningResult(

@@ -136,13 +136,9 @@ def _decide(
     )
     started = perf_counter()
     try:
-        api_key = settings.require("OPENAI_API_KEY")
+        options = settings.openai_client_options()
         chosen_model = model or settings.values.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
-        client_cm = (
-            nullcontext(client)
-            if client is not None
-            else OpenAI(api_key=api_key, timeout=30, max_retries=0)
-        )
+        client_cm = nullcontext(client) if client is not None else OpenAI(**options)
         with client_cm as openai_client:
             response = openai_client.responses.parse(
                 model=chosen_model,

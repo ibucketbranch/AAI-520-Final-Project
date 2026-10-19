@@ -15,6 +15,7 @@ from investment_committee.agents.planner import (
     normalize_symbol,
     plan_research,
 )
+from investment_committee.config import Settings
 from investment_committee.models import Evidence, Run, Source
 from investment_committee.storage import (
     DEFAULT_DB_PATH,
@@ -82,6 +83,7 @@ def run_research(
     database_path: str | Path | None = DEFAULT_DB_PATH,
     planner_provider: PlannerProvider = DEFAULT_PLANNER_PROVIDER,
     planner_model: str | None = None,
+    settings: Settings | None = None,
 ) -> ResearchSnapshot:
     """Plan and gather the currently implemented research stages.
 
@@ -91,6 +93,7 @@ def run_research(
         database_path: SQLite file to write, or None to skip persistence.
         planner_provider: Planner implementation selected by the caller.
         planner_model: Selected model, or None to use the provider's default.
+        settings: Settings for the planner, or None to read the environment.
 
     Returns:
         The run, its plan, results from each gatherer, and the message for
@@ -112,6 +115,7 @@ def run_research(
         provider=planner_provider,
         model=planner_model,
         previous_note=previous_note,
+        settings=settings,
     )
     plan = planning.plan
     handlers = default_gatherers() if gatherers is None else gatherers

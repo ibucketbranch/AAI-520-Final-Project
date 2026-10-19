@@ -191,13 +191,9 @@ def draft_claims_model(
     if not evidence:
         raise AnalystProviderError(f"The {side} analyst has no evidence to argue from.")
 
-    api_key = settings.require("OPENAI_API_KEY")
+    options = settings.openai_client_options()
     model = model or settings.values.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
-    openai_client_cm = (
-        nullcontext(client)
-        if client is not None
-        else OpenAI(api_key=api_key, timeout=30, max_retries=0)
-    )
+    openai_client_cm = nullcontext(client) if client is not None else OpenAI(**options)
     if revise:
         revise = [
             claim for claim in revise if claim.side == side and claim.supported is False

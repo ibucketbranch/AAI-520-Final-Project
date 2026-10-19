@@ -88,11 +88,9 @@ def list_planner_models(provider: PlannerProvider, settings: Settings | None = N
         raise ValueError(f"Unknown planner provider: {provider}")
 
     current_settings = settings or load_settings()
-    api_key = current_settings.require("OPENAI_API_KEY")
+    options = current_settings.openai_client_options()
     try:
-        with OpenAI(
-            api_key=api_key, timeout=current_settings.openai_timeout(), max_retries=0
-        ) as client:
+        with OpenAI(**options) as client:
             available = {model.id for model in client.models.list()}
     except APIError as error:
         raise PlannerProviderError(
@@ -197,13 +195,9 @@ def _build_openai_plan(
     model: str | None,
 ) -> PlanningResult:
     """Ask OpenAI for ordered research tasks."""
-    api_key = settings.require("OPENAI_API_KEY")
+    options = settings.openai_client_options()
     model = model or settings.values.get("OPENAI_MODEL") or DEFAULT_OPENAI_MODEL
-    openai_client_cm = (
-        nullcontext(client)
-        if client is not None
-        else OpenAI(api_key=api_key, timeout=settings.openai_timeout(), max_retries=0)
-    )
+    openai_client_cm = nullcontext(client) if client is not None else OpenAI(**options)
     instructions = (
         "You are the planner for a student investment research project. "
         "Return only a small research plan using the available sources."

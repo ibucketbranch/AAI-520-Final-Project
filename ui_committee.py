@@ -24,13 +24,19 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import pandas as pd
 import streamlit as st
+from openai import OpenAI
 
-from investment_committee.config import load_settings
-from investment_committee.evaluation.harness import plot_support_comparison, run_review_comparison
+from investment_committee.agents.planner import CURRENT_OPENAI_MODELS
+from investment_committee.config import Settings, load_settings
+from investment_committee.evaluation.harness import (
+    ReviewComparison,
+    plot_support_comparison,
+    run_review_comparison,
+)
 from investment_committee.evaluation.metrics import RunScore, comparison_rows, score_run
 from investment_committee.models import Claim, Evidence, Run
 from investment_committee.storage import load_claims, load_evidence, load_run, open_db
-from investment_committee.workflows.runner import run_research
+from investment_committee.workflows.runner import ResearchSnapshot, run_research
 
 DATA_DIR = Path("data")
 VERDICT_COLORS = {"bull": "green", "bear": "red", "none": "gray"}
@@ -374,39 +380,165 @@ def new_database_name() -> str:
     return str(DATA_DIR / f"live_{datetime.now().strftime('%Y%m%d_%H%M')}.db")
 
 
-def run_live(symbol: str, database: Path) -> tuple[Path, str]:
+@dataclass(frozen=True)
+class ModelServer:
+    """One server that speaks the OpenAI API, configured from the environment."""
+
+    label: str
+    base_url: str | None
+    api_key: str
+    billed: bool
+    known_models: tuple[str, ...] | None = None
+
+
+def model_servers(settings: Settings) -> tuple[list[ModelServer], list[str]]:
+    """Return the servers that are fully configured, and notes on half-set ones.
+
+    OpenAI uses OPENAI_API_KEY (and OPENAI_BASE_URL if set). A local server
+    such as Ollama needs LOCAL_LLM_BASE_URL and LOCAL_LLM_API_KEY; OpenRouter
+    needs OPENROUTER_BASE_URL and OPENROUTER_API_KEY. A server with only one
+    of its two variables set is left out, with a note naming the missing one.
+    """
+    values = settings.values
+    servers: list[ModelServer] = []
+    notes: list[str] = []
+    if values.get("OPENAI_API_KEY"):
+        # OpenAI also lists embedding and image models, so keep the planner's list.
+        servers.append(
+            ModelServer(
+                "OpenAI",
+                values.get("OPENAI_BASE_URL"),
+                values["OPENAI_API_KEY"],
+                True,
+                CURRENT_OPENAI_MODELS,
+            )
+        )
+    pairs = (
+        ("Local", "LOCAL_LLM_BASE_URL", "LOCAL_LLM_API_KEY", False),
+        ("OpenRouter", "OPENROUTER_BASE_URL", "OPENROUTER_API_KEY", True),
+    )
+    for name, url_var, key_var, billed in pairs:
+        url, key = values.get(url_var), values.get(key_var)
+        if url and key:
+            servers.append(ModelServer(f"{name} ({url})", url, key, billed))
+        elif url or key:
+            missing = key_var if url else url_var
+            notes.append(f"{name} is left out because {missing} is not set.")
+    return servers, notes
+
+
+def server_settings(
+    settings: Settings, server: ModelServer, model: str | None, timeout: float
+) -> Settings:
+    """Point the project's OpenAI settings at one server, model, and timeout."""
+    return settings.with_values(
+        OPENAI_API_KEY=server.api_key,
+        OPENAI_BASE_URL=server.base_url,
+        OPENAI_MODEL=model,
+        OPENAI_TIMEOUT=str(timeout),
+    )
+
+
+@st.cache_data(ttl=300, show_spinner="Loading models from the server...")
+def server_models(base_url: str | None, api_key: str, timeout: float) -> list[str]:
+    """Return the model ids a server reports, sorted, cached for five minutes."""
+    options: dict[str, object] = {"api_key": api_key, "timeout": timeout, "max_retries": 0}
+    if base_url:
+        options["base_url"] = base_url
+    with OpenAI(**options) as client:
+        return sorted(model.id for model in client.models.list())
+
+
+def run_warnings(snapshot: ResearchSnapshot, comparison: ReviewComparison) -> list[str]:
+    """Collect every stage that fell back instead of using the chosen model."""
+    warnings = []
+    if snapshot.planner_fallback_reason:
+        warnings.append(f"Planner used the rule-based plan: {snapshot.planner_fallback_reason}")
+    arms = (("review on", comparison.with_review), ("review off", comparison.without_review))
+    for arm, result in arms:
+        for stage, reason in result.fallbacks.items():
+            warnings.append(f"{arm}, {stage}: {reason}")
+    return warnings
+
+
+def run_live(
+    symbol: str, database: Path, settings: Settings, model: str
+) -> tuple[Path, str, list[str]]:
     """Gather research, then argue it with the review loop on and off.
 
+    Args:
+        symbol: Stock symbol to research.
+        database: New SQLite file the run is written to.
+        settings: Settings already pointed at the chosen server.
+        model: Model id used by the planner, Bull, Bear, evaluator, and chair.
+
     Returns:
-        The database path and the new gathering run's id, for the replay.
+        The database path, the new gathering run's id, and any fallback warnings.
 
     Raises:
         RuntimeError: If the research run could not be saved.
     """
-    settings = load_settings()
-    with st.status(f"Live committee for {symbol}", expanded=True) as status:
+    with st.status(f"Live committee for {symbol} on {model}", expanded=True) as status:
         st.write("Planning and gathering earnings, news, and market data...")
-        snapshot = run_research(symbol, database_path=database, planner_provider="openai")
+        snapshot = run_research(
+            symbol,
+            database_path=database,
+            planner_provider="openai",
+            planner_model=model,
+            settings=settings,
+        )
         if snapshot.storage_error is not None:
             raise RuntimeError(f"Research ran but could not be saved: {snapshot.storage_error}")
         for source, message in snapshot.gather_errors.items():
             st.warning(f"{source.title()}: {message}")
         st.write("Arguing the evidence with the review loop on, then off...")
         with closing(open_db(database)) as conn:
-            run_review_comparison(conn, snapshot.run.run_id, settings, provider="openai")
+            comparison = run_review_comparison(
+                conn, snapshot.run.run_id, settings, provider="openai", model=model
+            )
         status.update(label=f"Live committee for {symbol}: done", state="complete")
-    return database, snapshot.run.run_id
+    return database, snapshot.run.run_id, run_warnings(snapshot, comparison)
 
 
 def live_view() -> None:
-    """Run the real committee for one symbol, after a cost warning and a second click."""
-    st.caption("Runs the real pipeline. Makes paid model calls.")
-    if not load_settings().values.get("OPENAI_API_KEY"):
+    """Run the real committee for one symbol on a chosen server and model."""
+    settings = load_settings()
+    servers, notes = model_servers(settings)
+    for note in notes:
+        st.caption(note)
+    if not servers:
         st.info(
-            "Live committee is off because OPENAI_API_KEY is not set. Add it to .env "
-            "(see .env.example) and restart the app. Committee replay works without a key."
+            "Live committee is off because no model server is configured. Set "
+            "OPENAI_API_KEY, or LOCAL_LLM_BASE_URL and LOCAL_LLM_API_KEY, or "
+            "OPENROUTER_BASE_URL and OPENROUTER_API_KEY (see .env.example), then "
+            "restart the app. Committee replay works without any of them."
         )
         return
+
+    by_label = {server.label: server for server in servers}
+    server = by_label[st.selectbox("Model server", list(by_label), key="live_server")]
+    timeout = st.number_input(
+        "Seconds to wait for each model call",
+        min_value=1.0,
+        value=settings.openai_timeout(),
+        step=30.0,
+        key="live_timeout",
+        help="Local models can need minutes per call. A call that runs out of time "
+        "falls back to the template or rules, and the page lists it.",
+    )
+    try:
+        models = server_models(server.base_url, server.api_key, timeout)
+        if server.known_models is not None:
+            models = [model for model in models if model in server.known_models]
+    except Exception as error:  # Show connection and auth failures on the page.
+        st.error(f"Could not list models on {server.label}: {error}")
+        return
+    if not models:
+        st.error(f"{server.label} reported no models.")
+        return
+    configured = settings.values.get("OPENAI_MODEL")
+    start = models.index(configured) if configured in models else 0
+    model = st.selectbox("Model", models, index=start, key="live_model")
 
     # A widget's value can only be set before the widget is drawn in a run,
     # so a finished run asks for a fresh file name on the next rerun.
@@ -420,30 +552,38 @@ def live_view() -> None:
     if database.exists():
         st.warning(f"{database} already exists. Live runs write to a new file only.")
         can_run = False
-    else:
+    elif server.billed:
         st.warning(
             "This makes live model calls (planner, Bull, Bear, evaluator, and verdict) for "
-            "both setups, and your OpenAI account is billed for them."
+            f"both setups, and your {server.label} account is billed for them."
         )
-    agreed = st.checkbox("I understand this makes paid API calls", key="live_agreed")
+    else:
+        st.warning(
+            "This runs every model call on this machine. There is no API bill, but a "
+            "full committee makes about 25 calls and can take a long time."
+        )
+    agreed = st.checkbox("I understand what this run will call", key="live_agreed")
     if st.button(
         "Run live committee", type="primary", disabled=not (agreed and can_run), key="live_run"
     ):
+        chosen = server_settings(settings, server, model, timeout)
         try:
-            st.session_state["live_result"] = run_live(symbol, database)
+            st.session_state["live_result"] = run_live(symbol, database, chosen, model)
         except Exception as error:  # Show provider and data failures on the page.
             st.error(str(error))
             return
         st.session_state["live_db_reset"] = True
         st.rerun()
 
-    result: tuple[Path, str] | None = st.session_state.get("live_result")
+    result: tuple[Path, str, list[str]] | None = st.session_state.get("live_result")
     if result is not None:
         show_live_result(*result)
 
 
-def show_live_result(database: Path, parent_id: str) -> None:
-    """Hand a finished live run to the replay view."""
+def show_live_result(database: Path, parent_id: str, warnings: list[str]) -> None:
+    """Hand a finished live run to the replay view, after any fallback warnings."""
+    for warning in warnings:
+        st.warning(warning)
     with closing(open_readonly(database)) as conn:
         found = [item for item in gathering_runs(conn) if item.run.run_id == parent_id]
     if not found:
